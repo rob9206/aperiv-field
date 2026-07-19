@@ -10,7 +10,10 @@
     "ios": {
       "bundleIdentifier": "com.aperiv.field",
       "supportsTablet": false,
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.aperiv.field",
@@ -47,6 +50,12 @@
         "projectId": "dceb05ef-6ca4-46e4-b9d4-f6d65c0a0c20"
       }
     },
-    "owner": "dawsondynamics"
+    "owner": "dawsondynamics",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/dceb05ef-6ca4-46e4-b9d4-f6d65c0a0c20"
+    }
   }
 }
