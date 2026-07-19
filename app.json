@@ -40,6 +40,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "dceb05ef-6ca4-46e4-b9d4-f6d65c0a0c20"
+      }
+    },
+    "owner": "dawsondynamics"
   }
 }
