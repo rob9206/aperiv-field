@@ -8,7 +8,7 @@ This is the **mobile** companion to the Next.js web app in [`rob9206/aperiv`](ht
 
 - Expo SDK 57 · Expo Router · TypeScript
 - EAS Build + Submit (`eas.json` profiles: `development`, `preview`, `production`)
-- Supabase (planned) via `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+- Supabase Auth via `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` (`@supabase/supabase-js` + AsyncStorage session persistence)
 
 ## Local development
 
@@ -46,6 +46,6 @@ If they're missing or malformed the app runs in a "not configured" placeholder m
 
 ## Screens (v1 shell)
 
-- `/` — home, config status, links
-- `/login` — auth placeholder (wire to Supabase later)
-- `/walkthrough` — capture flow placeholder (LiDAR later)
+- `/` — home, config/signed-in status, sign-out
+- `/login` — email/password via `signInWithPassword`
+- `/walkthrough` — capture flow placeholder (auth-protected; LiDAR later)
