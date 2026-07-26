@@ -53,7 +53,7 @@
     },
     "owner": "dawsondynamics",
     "runtimeVersion": {
-      "policy": "appVersion"
+      "policy": "fingerprint"
     },
     "updates": {
       "url": "https://u.expo.dev/dceb05ef-6ca4-46e4-b9d4-f6d65c0a0c20"
