@@ -54,5 +54,59 @@ jobs:
           packager: npm
           token: ${{ secrets.EXPO_TOKEN }}
 
+      - name: Verify compatible iOS preview build
+        shell: bash
+        run: |
+          build_id="$(
+            eas build:list \
+              --platform ios \
+              --build-profile preview \
+              --channel preview \
+              --status finished \
+              --limit 1 \
+              --json \
+              --non-interactive |
+              node -e '
+                let input = "";
+                process.stdin.setEncoding("utf8");
+                process.stdin.on("data", chunk => input += chunk);
+                process.stdin.on("end", () => {
+                  const start = input.indexOf("[");
+                  const end = input.lastIndexOf("]");
+                  const builds = JSON.parse(input.slice(start, end + 1));
+                  if (builds.length === 0) {
+                    console.error("No finished iOS preview build exists.");
+                    process.exit(1);
+                  }
+                  process.stdout.write(builds[0].id);
+                });
+              '
+          )"
+
+          eas fingerprint:compare \
+            --build-id "$build_id" \
+            --environment preview \
+            --json \
+            --non-interactive |
+            node -e '
+              let input = "";
+              process.stdin.setEncoding("utf8");
+              process.stdin.on("data", chunk => input += chunk);
+              process.stdin.on("end", () => {
+                const start = input.indexOf("{");
+                const end = input.lastIndexOf("}");
+                const comparison = JSON.parse(input.slice(start, end + 1));
+                const buildRuntime = comparison.fingerprint1.hash;
+                const updateRuntime = comparison.fingerprint2.hash;
+                if (buildRuntime !== updateRuntime) {
+                  console.error(
+                    `No compatible iOS preview build: ${buildRuntime} !== ${updateRuntime}`,
+                  );
+                  process.exit(1);
+                }
+                console.log(`Compatible runtime: ${buildRuntime}`);
+              });
+            '
+
       - name: Publish iOS preview update
         run: eas update --channel preview --environment preview --platform ios --message "main@${GITHUB_SHA}" --non-interactive
