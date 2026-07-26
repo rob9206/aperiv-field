@@ -14,7 +14,8 @@ function createSupabaseClient(): SupabaseClient | null {
 
   return createClient(env.url, env.anonKey, {
     auth: {
-      storage: AsyncStorage,
+      // AsyncStorage is native-only; on web, supabase-js uses localStorage.
+      ...(Platform.OS !== 'web' ? { storage: AsyncStorage } : {}),
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: false,
