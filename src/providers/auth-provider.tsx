@@ -33,13 +33,25 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     let mounted = true;
 
-    void supabase.auth.getSession().then(({ data }) => {
-      if (!mounted) {
-        return;
-      }
-      setSession(data.session);
-      setIsLoading(false);
-    });
+    void supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (!mounted) {
+          return;
+        }
+        setSession(data.session);
+      })
+      .catch(() => {
+        // AsyncStorage / network failures must not leave the splash stuck.
+        if (mounted) {
+          setSession(null);
+        }
+      })
+      .finally(() => {
+        if (mounted) {
+          setIsLoading(false);
+        }
+      });
 
     const {
       data: { subscription },

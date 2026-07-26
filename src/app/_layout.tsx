@@ -32,7 +32,13 @@ function SplashScreenController() {
 }
 
 function RootNavigator() {
-  const { session } = useAuth();
+  const { session, isLoading } = useAuth();
+
+  // Wait for session restore before evaluating Protected guards so a
+  // deep link to /walkthrough is not bounced away while session is still null.
+  if (isLoading) {
+    return null;
+  }
 
   return (
     <Stack>
