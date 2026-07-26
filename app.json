@@ -9,10 +9,11 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.aperiv.field",
-      "supportsTablet": false,
+      "supportsTablet": true,
       "icon": "./assets/expo.icon",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Aperiv Field uses the camera and LiDAR sensor to scan room geometry during walkthroughs."
       }
     },
     "android": {
