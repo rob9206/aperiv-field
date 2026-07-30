@@ -48,4 +48,25 @@ If they're missing or malformed the app runs in a "not configured" placeholder m
 
 - `/` — home, config/signed-in status, sign-out
 - `/login` — email/password via `signInWithPassword`
-- `/walkthrough` — capture flow placeholder (auth-protected; LiDAR later)
+- `/walkthrough` — RoomPlan LiDAR capture (auth-protected)
+
+## Room scanning (RoomPlan)
+
+Room capture lives in the local Expo module `modules/expo-room-scan` (dependency `expo-room-scan`).
+
+**Requirements**
+
+- Physical LiDAR device (iPhone 12 Pro / later Pro models, or iPad Pro with LiDAR)
+- iOS 16.4+
+- A **native** EAS iOS build that links the module — Expo Go will never work, and an EAS Update / OTA JS push cannot add native code
+
+**If Walkthrough says “New iOS build required”**
+
+The JS bundle is present but `ExpoRoomScan` is missing from the binary. Rebuild and reinstall:
+
+```bash
+eas build --platform ios --profile preview
+eas submit --platform ios --profile preview
+```
+
+Development client alternative: `eas build --platform ios --profile development`, then `npx expo start --dev-client`.

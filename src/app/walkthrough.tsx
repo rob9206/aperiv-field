@@ -14,14 +14,16 @@ import {
   cancelSession,
   exportResults,
   finishSession,
+  isNativeModuleAvailable,
   isSupported,
   share,
   startSession,
   type RoomScanExportResult,
-} from '../../modules/expo-room-scan';
+} from 'expo-room-scan';
 
 type ScanState =
   | { phase: 'checking' }
+  | { phase: 'missing-native' }
   | { phase: 'unsupported' }
   | { phase: 'ready' }
   | { phase: 'scanning' }
@@ -48,7 +50,13 @@ export default function WalkthroughScreen() {
     stopRequested.current = false;
 
     try {
-      setScanState((await isSupported()) ? { phase: 'ready' } : { phase: 'unsupported' });
+      if (!isNativeModuleAvailable()) {
+        setScanState({ phase: 'missing-native' });
+        return;
+      }
+
+      const supported = await isSupported();
+      setScanState(supported ? { phase: 'ready' } : { phase: 'unsupported' });
     } catch (error) {
       setScanState({ phase: 'error', message: errorMessage(error) });
     }
@@ -76,18 +84,28 @@ export default function WalkthroughScreen() {
   useEffect(() => {
     let isMounted = true;
 
-    isSupported().then(
-      (supported) => {
-        if (isMounted) {
-          setScanState(supported ? { phase: 'ready' } : { phase: 'unsupported' });
+    Promise.resolve()
+      .then(async () => {
+        if (!isNativeModuleAvailable()) {
+          return { phase: 'missing-native' as const };
         }
-      },
-      (error: unknown) => {
-        if (isMounted) {
-          setScanState({ phase: 'error', message: errorMessage(error) });
+
+        return (await isSupported())
+          ? { phase: 'ready' as const }
+          : { phase: 'unsupported' as const };
+      })
+      .then(
+        (nextState) => {
+          if (isMounted) {
+            setScanState(nextState);
+          }
+        },
+        (error: unknown) => {
+          if (isMounted) {
+            setScanState({ phase: 'error', message: errorMessage(error) });
+          }
         }
-      }
-    );
+      );
 
     return () => {
       isMounted = false;
@@ -273,19 +291,60 @@ export default function WalkthroughScreen() {
             </ThemedView>
           )}
 
-          {scanState.phase === 'unsupported' && (
+          {scanState.phase === 'missing-native' && (
             <ThemedView type="backgroundElement" style={styles.card}>
-              <ThemedText type="subtitle">Walkthrough</ThemedText>
+              <ThemedText type="subtitle">New iOS build required</ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
-                Placeholder for the on-site capture flow: unit selection, room-by-room
-                measurements, photos, and condition findings.
-              </ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
-                LiDAR / scan capture lands here in a later milestone.
+                This install does not include the RoomPlan native module. An OTA JavaScript
+                update cannot add it — you need a fresh EAS iOS build that links
+                expo-room-scan.
               </ThemedText>
               <ThemedText type="smallBold">
-                Scanning requires a LiDAR-equipped iPhone or iPad.
+                Run: eas build --platform ios --profile preview
               </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                Then install that build on this LiDAR device (TestFlight or internal
+                distribution). Expo Go will never work for room scanning.
+              </ThemedText>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setScanState({ phase: 'checking' });
+                  void checkSupport();
+                }}
+                style={({ pressed }) => [
+                  styles.secondaryButton,
+                  pressed && styles.buttonPressed,
+                ]}>
+                <ThemedText type="smallBold">Check again</ThemedText>
+              </Pressable>
+            </ThemedView>
+          )}
+
+          {scanState.phase === 'unsupported' && (
+            <ThemedView type="backgroundElement" style={styles.card}>
+              <ThemedText type="subtitle">Room scanning unavailable</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                The RoomPlan module is installed, but Apple reports this device cannot run
+                room capture. RoomPlan needs a LiDAR-equipped iPhone or iPad Pro on iOS 16
+                or newer (for example iPhone 12 Pro and later Pro models).
+              </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                Non-Pro iPhones (even recent ones) do not have LiDAR and will show this
+                screen.
+              </ThemedText>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setScanState({ phase: 'checking' });
+                  void checkSupport();
+                }}
+                style={({ pressed }) => [
+                  styles.secondaryButton,
+                  pressed && styles.buttonPressed,
+                ]}>
+                <ThemedText type="smallBold">Check again</ThemedText>
+              </Pressable>
             </ThemedView>
           )}
 
@@ -393,9 +452,6 @@ const styles = StyleSheet.create({
   },
   centeredCard: {
     alignItems: 'center',
-  },
-  centeredText: {
-    textAlign: 'center',
   },
   primaryButton: {
     alignItems: 'center',
