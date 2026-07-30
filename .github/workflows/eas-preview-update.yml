@@ -1,0 +1,112 @@
+name: Publish iOS preview update
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eas-update-preview
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: EAS Update
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Require Expo access token
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "Add the EXPO_TOKEN repository secret before using this workflow."
+            echo "https://docs.expo.dev/eas-update/github-actions/"
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.23.1
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --include=dev
+
+      - name: Check types
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Set up Expo and EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: 21.2.0
+          packager: npm
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Verify compatible iOS preview build
+        shell: bash
+        run: |
+          build_id="$(
+            eas build:list \
+              --platform ios \
+              --build-profile preview \
+              --channel preview \
+              --status finished \
+              --limit 1 \
+              --json \
+              --non-interactive |
+              node -e '
+                let input = "";
+                process.stdin.setEncoding("utf8");
+                process.stdin.on("data", chunk => input += chunk);
+                process.stdin.on("end", () => {
+                  const start = input.indexOf("[");
+                  const end = input.lastIndexOf("]");
+                  const builds = JSON.parse(input.slice(start, end + 1));
+                  if (builds.length === 0) {
+                    console.error("No finished iOS preview build exists.");
+                    process.exit(1);
+                  }
+                  process.stdout.write(builds[0].id);
+                });
+              '
+          )"
+
+          eas fingerprint:compare \
+            --build-id "$build_id" \
+            --environment preview \
+            --json \
+            --non-interactive |
+            node -e '
+              let input = "";
+              process.stdin.setEncoding("utf8");
+              process.stdin.on("data", chunk => input += chunk);
+              process.stdin.on("end", () => {
+                const start = input.indexOf("{");
+                const end = input.lastIndexOf("}");
+                const comparison = JSON.parse(input.slice(start, end + 1));
+                const buildRuntime = comparison.fingerprint1.hash;
+                const updateRuntime = comparison.fingerprint2.hash;
+                if (buildRuntime !== updateRuntime) {
+                  console.error(
+                    `No compatible iOS preview build: ${buildRuntime} !== ${updateRuntime}`,
+                  );
+                  process.exit(1);
+                }
+                console.log(`Compatible runtime: ${buildRuntime}`);
+              });
+            '
+
+      - name: Publish iOS preview update
+        run: eas update --channel preview --environment preview --platform ios --message "main@${GITHUB_SHA}" --non-interactive
