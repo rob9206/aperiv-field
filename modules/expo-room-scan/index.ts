@@ -22,32 +22,67 @@ function emptySubscription(): RoomScanSubscription {
   return { remove() {} };
 }
 
+/** True when the ExpoRoomScan native module is present in this binary. */
+export function isNativeModuleAvailable(): boolean {
+  return ExpoRoomScanModule != null;
+}
+
 export async function isSupported(): Promise<boolean> {
-  return ExpoRoomScanModule?.isSupported() ?? false;
+  if (!ExpoRoomScanModule) {
+    return false;
+  }
+
+  return ExpoRoomScanModule.isSupported();
 }
 
 export async function startSession(): Promise<void> {
-  await ExpoRoomScanModule?.startSession();
+  if (!ExpoRoomScanModule) {
+    throw new Error(
+      'Room scanning native module is missing from this app install. Install a new EAS iOS build that includes expo-room-scan.'
+    );
+  }
+
+  await ExpoRoomScanModule.startSession();
 }
 
 export async function finishSession(): Promise<void> {
-  await ExpoRoomScanModule?.finishSession();
+  if (!ExpoRoomScanModule) {
+    throw new Error(
+      'Room scanning native module is missing from this app install. Install a new EAS iOS build that includes expo-room-scan.'
+    );
+  }
+
+  await ExpoRoomScanModule.finishSession();
 }
 
 export async function cancelSession(): Promise<void> {
-  await ExpoRoomScanModule?.cancelSession();
+  if (!ExpoRoomScanModule) {
+    throw new Error(
+      'Room scanning native module is missing from this app install. Install a new EAS iOS build that includes expo-room-scan.'
+    );
+  }
+
+  await ExpoRoomScanModule.cancelSession();
 }
 
 export async function exportResults(scanId: string): Promise<RoomScanExportResult> {
   if (!ExpoRoomScanModule) {
-    throw new Error('Room scanning is not available on this platform.');
+    throw new Error(
+      'Room scanning native module is missing from this app install. Install a new EAS iOS build that includes expo-room-scan.'
+    );
   }
 
   return ExpoRoomScanModule.exportResults(scanId);
 }
 
 export async function share(paths: string[]): Promise<void> {
-  await ExpoRoomScanModule?.share(paths);
+  if (!ExpoRoomScanModule) {
+    throw new Error(
+      'Room scanning native module is missing from this app install. Install a new EAS iOS build that includes expo-room-scan.'
+    );
+  }
+
+  await ExpoRoomScanModule.share(paths);
 }
 
 export function addStatusChangeListener(
@@ -71,6 +106,7 @@ export function addErrorListener(
 }
 
 const ExpoRoomScan = {
+  isNativeModuleAvailable,
   isSupported,
   startSession,
   finishSession,
