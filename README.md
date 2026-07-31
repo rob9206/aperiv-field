@@ -27,16 +27,21 @@ If the phone can't find the server, use a tunnel: `npx expo start --dev-client -
 
 ## Ship to TestFlight
 
-Dev-client builds do **not** work standalone — never submit the `development` profile to TestFlight. Use `preview` or `production` (JS bundle embedded):
+Dev-client builds do **not** work standalone — never submit the `development` profile to TestFlight. Use `preview` or `production` (store distribution, JS bundle embedded):
 
 ```bash
 # one-time: npm install -g eas-cli && eas login && eas init
+git checkout main && git pull
 eas build --platform ios --profile preview
-eas submit --platform ios --profile preview
+eas submit --platform ios --profile preview --latest
 ```
 
+Then in App Store Connect → TestFlight, add Kevin (and yourself) as internal/external testers and share the invite.
+
 - Bundle ID: `com.aperiv.field`
-- Version bumps: `production` auto-increments via `autoIncrement`.
+- ASC App ID: `6790955096`
+- Version bumps: `preview` and `production` auto-increment build numbers
+- Do **not** resubmit an old build from before RoomPlan — scanning needs a binary built from current `main`
 
 ## Environment
 
