@@ -11,6 +11,11 @@
         "simulator": false
       }
     },
+    "internal": {
+      "distribution": "internal",
+      "channel": "preview",
+      "environment": "preview"
+    },
     "preview": {
       "distribution": "store",
       "channel": "preview",

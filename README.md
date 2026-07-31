@@ -36,7 +36,20 @@ eas build --platform ios --profile preview
 eas submit --platform ios --profile preview --latest
 ```
 
-Then in App Store Connect → TestFlight, add Kevin (and yourself) as internal/external testers and share the invite.
+Then in App Store Connect → TestFlight, add testers and share the invite.
+
+### Share via ad-hoc install link (UDID)
+
+Use this when a tester gives you their device UDID instead of using TestFlight:
+
+```bash
+eas device:create
+# choose: register by UDID, name the device, paste the UDID
+
+eas build --platform ios --profile internal --refresh-ad-hoc-provisioning-profile
+```
+
+Send them the install URL from the finished build on expo.dev. Rebuild (or resign) after every new device.
 
 - Bundle ID: `com.aperiv.field`
 - ASC App ID: `6790955096`
