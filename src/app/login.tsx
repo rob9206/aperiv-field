@@ -10,10 +10,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Colors, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/providers/auth-provider';
 
 export default function LoginScreen() {
+  const theme = useTheme();
   const { isConfigured, signIn, session } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -54,9 +56,16 @@ export default function LoginScreen() {
             </ThemedText>
           ) : null}
           <TextInput
-            style={styles.input}
+            style={[
+              styles.input,
+              {
+                backgroundColor: theme.background,
+                color: theme.text,
+                borderColor: theme.backgroundSelected,
+              },
+            ]}
             placeholder="Email"
-            placeholderTextColor={Colors.light.textSecondary}
+            placeholderTextColor={theme.textSecondary}
             autoCapitalize="none"
             autoComplete="username"
             keyboardType="email-address"
@@ -65,9 +74,16 @@ export default function LoginScreen() {
             onChangeText={setEmail}
           />
           <TextInput
-            style={styles.input}
+            style={[
+              styles.input,
+              {
+                backgroundColor: theme.background,
+                color: theme.text,
+                borderColor: theme.backgroundSelected,
+              },
+            ]}
             placeholder="Password"
-            placeholderTextColor={Colors.light.textSecondary}
+            placeholderTextColor={theme.textSecondary}
             autoComplete="current-password"
             secureTextEntry
             editable={isConfigured && !loading}
@@ -123,16 +139,16 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.two,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
-    backgroundColor: '#ffffff',
-    color: '#0B1120',
+    borderWidth: StyleSheet.hairlineWidth,
     fontSize: 16,
+    minHeight: 48,
   },
   button: {
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: Spacing.two,
     paddingVertical: Spacing.three,
-    backgroundColor: '#0B1120',
+    backgroundColor: '#3c87f7',
     minHeight: 48,
   },
   buttonPressed: {

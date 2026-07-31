@@ -7,6 +7,7 @@ import { ManualWalkthrough } from '@/components/manual-walkthrough';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import {
   RoomScanView,
   addErrorListener,
@@ -39,6 +40,7 @@ function fileName(path: string): string {
 }
 
 export default function WalkthroughScreen() {
+  const theme = useTheme();
   const [scanState, setScanState] = useState<ScanState>({ phase: 'checking' });
   const activeScanId = useRef<string | null>(null);
   const startRequested = useRef(false);
@@ -309,6 +311,7 @@ export default function WalkthroughScreen() {
                 onPress={() => enterManual(true)}
                 style={({ pressed }) => [
                   styles.secondaryButton,
+                  { borderColor: theme.textSecondary },
                   pressed && styles.buttonPressed,
                 ]}>
                 <ThemedText type="smallBold">Back to manual walkthrough</ThemedText>
@@ -347,6 +350,7 @@ export default function WalkthroughScreen() {
                 onPress={() => enterManual(true)}
                 style={({ pressed }) => [
                   styles.secondaryButton,
+                  { borderColor: theme.textSecondary },
                   pressed && styles.buttonPressed,
                 ]}>
                 <ThemedText type="smallBold">Back to walkthrough</ThemedText>
@@ -356,6 +360,7 @@ export default function WalkthroughScreen() {
                 onPress={beginScan}
                 style={({ pressed }) => [
                   styles.secondaryButton,
+                  { borderColor: theme.textSecondary },
                   pressed && styles.buttonPressed,
                 ]}>
                 <ThemedText type="smallBold">Re-scan</ThemedText>
@@ -388,6 +393,7 @@ export default function WalkthroughScreen() {
                 }}
                 style={({ pressed }) => [
                   styles.secondaryButton,
+                  { borderColor: theme.textSecondary },
                   pressed && styles.buttonPressed,
                 ]}>
                 <ThemedText type="smallBold">Try LiDAR again</ThemedText>
@@ -420,21 +426,24 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
     borderRadius: Spacing.two,
     backgroundColor: '#3c87f7',
+    minHeight: 48,
   },
   secondaryButton: {
     alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
     borderRadius: Spacing.two,
-    borderColor: '#8b8f97',
     borderWidth: StyleSheet.hairlineWidth,
+    minHeight: 48,
   },
   buttonPressed: {
-    opacity: 0.72,
+    opacity: 0.8,
   },
   scanContainer: {
     flex: 1,

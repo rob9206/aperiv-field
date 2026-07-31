@@ -39,20 +39,27 @@ export default function HomeScreen() {
         <ThemedView type="backgroundElement" style={styles.card}>
           {signedIn ? (
             <>
-              <Link href="/walkthrough">
-                <ThemedText type="linkPrimary">Start walkthrough →</ThemedText>
+              <Link href="/walkthrough" style={styles.actionLink}>
+                <ThemedText type="smallBold" style={styles.primaryAction}>
+                  Start walkthrough →
+                </ThemedText>
               </Link>
               <Pressable
                 accessibilityRole="button"
                 onPress={() => {
                   void signOut();
-                }}>
-                <ThemedText type="linkPrimary">Sign out</ThemedText>
+                }}
+                style={styles.actionLink}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  Sign out
+                </ThemedText>
               </Pressable>
             </>
           ) : (
-            <Link href="/login">
-              <ThemedText type="linkPrimary">Sign in →</ThemedText>
+            <Link href="/login" style={styles.actionLink}>
+              <ThemedText type="smallBold" style={styles.primaryAction}>
+                Sign in →
+              </ThemedText>
             </Link>
           )}
         </ThemedView>
@@ -73,18 +80,30 @@ const styles = StyleSheet.create({
   hero: {
     alignItems: 'center',
     gap: Spacing.two,
-    paddingVertical: Spacing.six,
+    paddingTop: Spacing.five,
+    paddingBottom: Spacing.four,
   },
   title: {
     textAlign: 'center',
+    fontSize: 40,
+    lineHeight: 44,
   },
   subtitle: {
     textAlign: 'center',
+    maxWidth: 320,
   },
   card: {
     gap: Spacing.two,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.four,
     borderRadius: Spacing.three,
+  },
+  actionLink: {
+    paddingVertical: Spacing.one,
+  },
+  primaryAction: {
+    color: '#3c87f7',
+    fontSize: 16,
+    lineHeight: 24,
   },
 });

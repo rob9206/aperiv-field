@@ -10,7 +10,8 @@ import {
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Colors, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import {
   DEMO_UNITS,
   createDraftFromUnit,
@@ -49,10 +50,23 @@ export function ManualWalkthrough({
   onOpenLidar,
   lidarAvailable = false,
 }: ManualWalkthroughProps) {
+  const theme = useTheme();
   const [step, setStep] = useState<Step>('unit');
   const [draft, setDraft] = useState<ManualWalkthroughDraft | null>(null);
   const [hydrateError, setHydrateError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+
+  // Use selected/muted tokens for controls so dark mode never puts white
+  // ThemedText on hardcoded light chips/rows.
+  const surface = {
+    control: theme.backgroundSelected,
+    border: theme.textSecondary,
+    input: {
+      backgroundColor: theme.background,
+      color: theme.text,
+      borderColor: theme.backgroundSelected,
+    },
+  };
 
   useEffect(() => {
     void AsyncStorage.getItem(DRAFT_KEY)
@@ -189,6 +203,7 @@ export function ManualWalkthrough({
             onPress={onOpenLidar}
             style={({ pressed }) => [
               styles.secondaryButton,
+              { borderColor: surface.border },
               pressed && styles.buttonPressed,
             ]}>
             <ThemedText type="smallBold">Open LiDAR room scan</ThemedText>
@@ -218,6 +233,7 @@ export function ManualWalkthrough({
             }}
             style={[
               styles.stepChip,
+              { backgroundColor: surface.control },
               step === item && styles.stepChipActive,
               item !== 'unit' && !draft && styles.stepChipDisabled,
             ]}>
@@ -249,6 +265,7 @@ export function ManualWalkthrough({
               onPress={() => selectUnit(unit.id)}
               style={({ pressed }) => [
                 styles.unitRow,
+                { backgroundColor: surface.control },
                 draft?.unitId === unit.id && styles.unitRowSelected,
                 pressed && styles.buttonPressed,
               ]}>
@@ -289,7 +306,9 @@ export function ManualWalkthrough({
             Enter measured sq ft, condition, and photo count per room.
           </ThemedText>
           {draft.rooms.map((room) => (
-            <View key={room.id} style={styles.roomBlock}>
+            <View
+              key={room.id}
+              style={[styles.roomBlock, { borderTopColor: surface.border }]}>
               <ThemedText type="smallBold">{room.name}</ThemedText>
               <View style={styles.fieldRow}>
                 <View style={styles.fieldGrow}>
@@ -297,7 +316,7 @@ export function ManualWalkthrough({
                     Measured sq ft
                   </ThemedText>
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, surface.input]}
                     keyboardType="decimal-pad"
                     value={room.sqft}
                     onChangeText={(sqft) => updateRoom(room.id, { sqft })}
@@ -308,7 +327,7 @@ export function ManualWalkthrough({
                     Photos
                   </ThemedText>
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, surface.input]}
                     keyboardType="number-pad"
                     value={room.photoCount}
                     onChangeText={(photoCount) =>
@@ -328,6 +347,10 @@ export function ManualWalkthrough({
                     onPress={() => updateRoom(room.id, { condition })}
                     style={[
                       styles.choiceChip,
+                      {
+                        backgroundColor: surface.control,
+                        borderColor: surface.border,
+                      },
                       room.condition === condition && styles.choiceChipActive,
                     ]}>
                     <ThemedText
@@ -343,9 +366,9 @@ export function ManualWalkthrough({
                 ))}
               </View>
               <TextInput
-                style={[styles.input, styles.notesInput]}
+                style={[styles.input, styles.notesInput, surface.input]}
                 placeholder="Room notes"
-                placeholderTextColor={Colors.light.textSecondary}
+                placeholderTextColor={theme.textSecondary}
                 value={room.notes}
                 onChangeText={(notes) => updateRoom(room.id, { notes })}
               />
@@ -380,7 +403,9 @@ export function ManualWalkthrough({
             </ThemedText>
           ) : null}
           {draft.findings.map((finding) => (
-            <View key={finding.id} style={styles.findingBlock}>
+            <View
+              key={finding.id}
+              style={[styles.findingBlock, { borderTopColor: surface.border }]}>
               <View style={styles.chipRow}>
                 {SEVERITIES.map((severity) => (
                   <Pressable
@@ -389,6 +414,10 @@ export function ManualWalkthrough({
                     onPress={() => updateFinding(finding.id, { severity })}
                     style={[
                       styles.choiceChip,
+                      {
+                        backgroundColor: surface.control,
+                        borderColor: surface.border,
+                      },
                       finding.severity === severity && styles.choiceChipActive,
                     ]}>
                     <ThemedText
@@ -404,16 +433,16 @@ export function ManualWalkthrough({
                 ))}
               </View>
               <TextInput
-                style={styles.input}
+                style={[styles.input, surface.input]}
                 placeholder="Finding title"
-                placeholderTextColor={Colors.light.textSecondary}
+                placeholderTextColor={theme.textSecondary}
                 value={finding.title}
                 onChangeText={(title) => updateFinding(finding.id, { title })}
               />
               <TextInput
-                style={[styles.input, styles.notesInput]}
+                style={[styles.input, styles.notesInput, surface.input]}
                 placeholder="Details"
-                placeholderTextColor={Colors.light.textSecondary}
+                placeholderTextColor={theme.textSecondary}
                 value={finding.body}
                 onChangeText={(body) => updateFinding(finding.id, { body })}
               />
@@ -429,6 +458,7 @@ export function ManualWalkthrough({
             onPress={addFinding}
             style={({ pressed }) => [
               styles.secondaryButton,
+              { borderColor: surface.border },
               pressed && styles.buttonPressed,
             ]}>
             <ThemedText type="smallBold">Add finding</ThemedText>
@@ -501,6 +531,7 @@ export function ManualWalkthrough({
             onPress={() => setStep('rooms')}
             style={({ pressed }) => [
               styles.secondaryButton,
+              { borderColor: surface.border },
               pressed && styles.buttonPressed,
             ]}>
             <ThemedText type="smallBold">Edit rooms</ThemedText>
@@ -510,6 +541,7 @@ export function ManualWalkthrough({
             onPress={() => void resetWalkthrough()}
             style={({ pressed }) => [
               styles.secondaryButton,
+              { borderColor: surface.border },
               pressed && styles.buttonPressed,
             ]}>
             <ThemedText type="smallBold">Start new walkthrough</ThemedText>
@@ -540,13 +572,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     borderRadius: Spacing.two,
-    backgroundColor: '#E8E9ED',
   },
   stepChipActive: {
     backgroundColor: '#0B1120',
   },
   stepChipDisabled: {
-    opacity: 0.45,
+    opacity: 0.4,
   },
   stepChipLabelActive: {
     color: '#ffffff',
@@ -559,10 +590,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
     borderRadius: Spacing.two,
-    backgroundColor: '#ffffff',
   },
   unitRowSelected: {
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#3c87f7',
   },
   unitCopy: {
@@ -571,15 +601,13 @@ const styles = StyleSheet.create({
   },
   roomBlock: {
     gap: Spacing.two,
-    paddingTop: Spacing.two,
+    paddingTop: Spacing.three,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#C8CAD0',
   },
   findingBlock: {
     gap: Spacing.two,
-    paddingTop: Spacing.two,
+    paddingTop: Spacing.three,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#C8CAD0',
   },
   fieldRow: {
     flexDirection: 'row',
@@ -592,13 +620,13 @@ const styles = StyleSheet.create({
   input: {
     borderRadius: Spacing.two,
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    backgroundColor: '#ffffff',
-    color: '#0B1120',
+    paddingVertical: Spacing.two + 2,
+    borderWidth: StyleSheet.hairlineWidth,
     fontSize: 16,
+    minHeight: 44,
   },
   notesInput: {
-    minHeight: 72,
+    minHeight: 80,
     textAlignVertical: 'top',
   },
   chipRow: {
@@ -610,9 +638,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     borderRadius: Spacing.two,
-    backgroundColor: '#ffffff',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#C8CAD0',
   },
   choiceChipActive: {
     backgroundColor: '#3c87f7',
@@ -623,24 +649,27 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
     borderRadius: Spacing.two,
     backgroundColor: '#3c87f7',
+    minHeight: 48,
   },
   primaryButtonLabel: {
     color: '#ffffff',
   },
   secondaryButton: {
     alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
     borderRadius: Spacing.two,
-    borderColor: '#8b8f97',
     borderWidth: StyleSheet.hairlineWidth,
+    minHeight: 48,
   },
   buttonPressed: {
-    opacity: 0.72,
+    opacity: 0.8,
   },
   errorText: {
     color: '#d13c3c',
