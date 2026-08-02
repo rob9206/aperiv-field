@@ -3,6 +3,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,11 +17,12 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MinTouchTarget, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { nextGuidePhase } from '@/lib/guide-steps';
+import { nextGuidePhase, previousGuidePhase } from '@/lib/guide-steps';
 import { defaultRoomNames } from '@/lib/i18n';
 import {
   createDraft,
   createRoom,
+  deletePhotoFile,
   draftHasScanMeasure,
   loadDraftStore,
   measuredSqft,
@@ -194,9 +197,11 @@ export function ManualWalkthrough({
         const empty: DraftStore = { activeDraftId: null, drafts: {} };
         storeRef.current = empty;
         setStore(empty);
-        setHydrateError('Could not restore jobs on this device.');
+        setHydrateError(t('restoreFailed'));
       }
     );
+    // locale `t` used only for error copy on failure
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- remount on route params only
   }, [params.mode, params.id]);
 
   useEffect(() => {
@@ -207,7 +212,7 @@ export function ManualWalkthrough({
     setStore(next);
     setSavedMessage(null);
     void saveDraftStore(next).catch(() => {
-      setHydrateError('Changes could not be saved on this device.');
+      setHydrateError(t('saveFailed'));
     });
   };
 
@@ -221,7 +226,7 @@ export function ManualWalkthrough({
         drafts: { ...current.drafts, [next.id]: next },
       };
       void saveDraftStore(updated).catch(() => {
-        setHydrateError('Changes could not be saved on this device.');
+        setHydrateError(t('saveFailed'));
       });
       return updated;
     });
@@ -285,14 +290,7 @@ export function ManualWalkthrough({
     }
     const idx = active.guideRoomIndex ?? 0;
     const rooms = active.rooms.map((item, i) =>
-      i === idx
-        ? {
-            ...item,
-            scanned: true,
-            measuredSqftFromScan: item.measuredSqftFromScan ?? 1,
-            sqft: item.sqft || '1',
-          }
-        : item
+      i === idx ? { ...item, scanned: true } : item
     );
     const measuredTotal = measuredSqft(rooms);
     const updated: DraftStore = {
@@ -302,7 +300,8 @@ export function ManualWalkthrough({
         [active.id]: {
           ...active,
           rooms,
-          measuredSqftFromScan: measuredTotal,
+          measuredSqftFromScan:
+            measuredTotal > 0 ? measuredTotal : active.measuredSqftFromScan,
           guidePhase: 'condition',
           completedAt: undefined,
         },
@@ -323,7 +322,7 @@ export function ManualWalkthrough({
       if (source === 'camera') {
         const permission = await ImagePicker.requestCameraPermissionsAsync();
         if (!permission.granted) {
-          setPhotoError(t('takePhoto'));
+          setPhotoError(t('cameraDenied'));
           return;
         }
       }
@@ -363,8 +362,54 @@ export function ManualWalkthrough({
       );
       persistDraft({ ...active, rooms, completedAt: undefined });
     } catch {
-      setPhotoError(t('takePhoto'));
+      setPhotoError(t('photoFailed'));
     }
+  };
+
+  const removePhoto = (photoId: string) => {
+    if (!draft || !room) {
+      return;
+    }
+    const photo = room.photos.find((item) => item.id === photoId);
+    if (photo) {
+      deletePhotoFile(photo.uri);
+    }
+    const rooms = draft.rooms.map((item, i) =>
+      i === roomIndex
+        ? {
+            ...item,
+            photos: item.photos.filter((entry) => entry.id !== photoId),
+          }
+        : item
+    );
+    persistDraft({ ...draft, rooms, completedAt: undefined });
+  };
+
+  const goBackStep = () => {
+    if (screenStep === 'done' && draft && !draft.completedAt) {
+      setScreenStep('roomGuide');
+      return;
+    }
+    if (screenStep !== 'roomGuide' || !draft) {
+      return;
+    }
+    const prev = previousGuidePhase(phase, lidarAvailable);
+    if (prev === 'leaveRoom') {
+      if (roomIndex > 0) {
+        setShowDamageNote(false);
+        updateGuide({
+          guideRoomIndex: roomIndex - 1,
+          guidePhase: 'photo',
+        });
+      } else {
+        setScreenStep('checkin');
+      }
+      return;
+    }
+    if (prev === 'damage') {
+      setShowDamageNote(Boolean(room?.hasDamage));
+    }
+    updateGuide({ guidePhase: prev });
   };
 
   const goNextRoomOrFinish = (finish: boolean) => {
@@ -421,27 +466,52 @@ export function ManualWalkthrough({
     const verifiedOk = status === 'verified' && draftHasScanMeasure(draft);
     const finalStatus: VerificationStatus =
       verifiedOk && lidarAvailable ? 'verified' : 'unverified';
+    const totalMeasured = measuredSqft(draft.rooms);
     persistDraft({
       ...draft,
       completedAt: new Date().toISOString(),
       verificationStatus: finalStatus,
-      measuredSqftFromScan: measuredSqft(draft.rooms),
+      measuredSqftFromScan: totalMeasured > 0 ? totalMeasured : undefined,
     });
     setSavedMessage(t('savedOnDevice'));
     setScreenStep('done');
   };
+
+  const scannedCount = draft
+    ? draft.rooms.filter((item) => item.scanned).length
+    : 0;
 
   const guideProgress =
     draft && draft.rooms.length > 0
       ? (roomIndex + (phase === 'advance' ? 1 : 0.35)) / draft.rooms.length
       : 0;
 
+  const showGuideBack =
+    screenStep === 'roomGuide' ||
+    (screenStep === 'done' && draft && !draft.completedAt);
+  const damageNoteOpen = showDamageNote || Boolean(room?.hasDamage);
+
   return (
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <ScrollView
       contentContainerStyle={styles.scrollContent}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}>
       <View style={styles.topBar}>
+        {showGuideBack ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={goBackStep}
+            style={styles.backHit}>
+            <ThemedText type="smallBold" style={{ color: theme.accentText }}>
+              ‹ {t('back')}
+            </ThemedText>
+          </Pressable>
+        ) : (
+          <View />
+        )}
         <LanguageToggle />
       </View>
 
@@ -643,11 +713,19 @@ export function ManualWalkthrough({
                   </ThemedText>
                 </Pressable>
                 <Pressable
-                  onPress={() => setShowDamageNote(true)}
+                  onPress={() => {
+                    const rooms = draft.rooms.map((item, i) =>
+                      i === roomIndex
+                        ? { ...item, hasDamage: true }
+                        : item
+                    );
+                    updateGuide({}, rooms);
+                    setShowDamageNote(true);
+                  }}
                   style={({ pressed }) => [
                     styles.choiceChip,
                     {
-                      backgroundColor: showDamageNote
+                      backgroundColor: damageNoteOpen
                         ? theme.dangerFill
                         : theme.backgroundSelected,
                     },
@@ -658,7 +736,7 @@ export function ManualWalkthrough({
                     style={[
                       styles.choiceLabel,
                       {
-                        color: showDamageNote
+                        color: damageNoteOpen
                           ? theme.onDangerFill
                           : theme.text,
                       },
@@ -667,14 +745,15 @@ export function ManualWalkthrough({
                   </ThemedText>
                 </Pressable>
               </View>
-              {showDamageNote ? (
+              {damageNoteOpen ? (
                 <>
                   <TextInput
-                    style={[styles.input, inputStyle]}
+                    style={[styles.input, styles.notesInput, inputStyle]}
                     placeholder={t('damageNotes')}
                     placeholderTextColor={theme.textSecondary}
                     value={room.notes}
                     multiline
+                    textAlignVertical="top"
                     onChangeText={(notes) => {
                       const rooms = draft.rooms.map((item, i) =>
                         i === roomIndex
@@ -708,11 +787,27 @@ export function ManualWalkthrough({
               {room.photos.length > 0 ? (
                 <View style={styles.photoRow}>
                   {room.photos.map((photo) => (
-                    <Image
-                      key={photo.id}
-                      source={{ uri: photo.uri }}
-                      style={styles.photoThumb}
-                    />
+                    <View key={photo.id} style={styles.photoWrap}>
+                      <Image
+                        source={{ uri: photo.uri }}
+                        style={styles.photoThumb}
+                      />
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={t('removePhoto')}
+                        hitSlop={8}
+                        onPress={() => removePhoto(photo.id)}
+                        style={[
+                          styles.photoRemove,
+                          { backgroundColor: theme.dangerFill },
+                        ]}>
+                        <ThemedText
+                          type="smallBold"
+                          style={{ color: theme.onDangerFill }}>
+                          ×
+                        </ThemedText>
+                      </Pressable>
+                    </View>
                   ))}
                 </View>
               ) : null}
@@ -819,9 +914,19 @@ export function ManualWalkthrough({
                 {t('recordedSqftLabel')} {Math.round(recorded)}
               </ThemedText>
             ) : null}
-            <ThemedText type="heading" style={styles.measureLine}>
-              {t('measuredSqftLabel')} {Math.round(measured)}
-            </ThemedText>
+            {measured > 0 ? (
+              <ThemedText type="heading" style={styles.measureLine}>
+                {t('measuredSqftLabel')} {Math.round(measured)}
+              </ThemedText>
+            ) : scannedCount > 0 ? (
+              <ThemedText type="heading" style={styles.measureLine}>
+                {t('roomsScanned')} {scannedCount}
+              </ThemedText>
+            ) : (
+              <ThemedText type="default" themeColor="textSecondary">
+                {t('measuredPending')}
+              </ThemedText>
+            )}
           </View>
           {savedMessage ? (
             <ThemedText type="default" themeColor="textSecondary">
@@ -875,10 +980,14 @@ export function ManualWalkthrough({
         </ThemedView>
       )}
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
   scrollContent: {
     padding: Spacing.four,
     gap: Spacing.three,
@@ -886,7 +995,14 @@ const styles = StyleSheet.create({
   },
   topBar: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.two,
+  },
+  backHit: {
+    minHeight: MinTouchTarget,
+    justifyContent: 'center',
+    paddingRight: Spacing.two,
   },
   card: {
     gap: Spacing.four,
@@ -924,6 +1040,22 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     fontSize: 17,
     minHeight: 52,
+  },
+  notesInput: {
+    minHeight: 96,
+  },
+  photoWrap: {
+    position: 'relative',
+  },
+  photoRemove: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   primaryButton: {
     minHeight: 56,

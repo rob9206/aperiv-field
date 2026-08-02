@@ -124,24 +124,32 @@ export function JobList({
                   </ThemedText>
                 </View>
               </View>
-              <Pressable
-                accessibilityRole="button"
-                hitSlop={12}
-                style={styles.deleteHit}
-                onPress={() => {
-                  if (confirmingDeleteId !== job.id) {
-                    setConfirmingDeleteId(job.id);
-                    return;
-                  }
-                  setConfirmingDeleteId(null);
-                  onDeleteJob(job.id);
-                }}>
-                <ThemedText type="smallBold" style={{ color: theme.danger }}>
-                  {confirmingDeleteId === job.id
-                    ? t('confirmDelete')
-                    : t('deleteJob')}
+              <View style={styles.rowActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  hitSlop={12}
+                  style={styles.deleteHit}
+                  onPress={() => {
+                    if (confirmingDeleteId !== job.id) {
+                      setConfirmingDeleteId(job.id);
+                      return;
+                    }
+                    setConfirmingDeleteId(null);
+                    onDeleteJob(job.id);
+                  }}>
+                  <ThemedText type="smallBold" style={{ color: theme.danger }}>
+                    {confirmingDeleteId === job.id
+                      ? t('confirmDelete')
+                      : t('deleteJob')}
+                  </ThemedText>
+                </Pressable>
+                <ThemedText
+                  type="heading"
+                  themeColor="textSecondary"
+                  style={styles.chevron}>
+                  ›
                 </ThemedText>
-              </Pressable>
+              </View>
             </Pressable>
           );
         })
@@ -208,12 +216,21 @@ const styles = StyleSheet.create({
     minHeight: 28,
     justifyContent: 'center',
   },
+  rowActions: {
+    alignItems: 'flex-end',
+    gap: Spacing.one,
+  },
   deleteHit: {
     minHeight: MinTouchTarget,
     minWidth: MinTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.one,
+  },
+  chevron: {
+    fontSize: 28,
+    lineHeight: 32,
+    fontWeight: '300',
   },
   pressed: {
     opacity: 0.88,

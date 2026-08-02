@@ -29,3 +29,26 @@ export function nextGuidePhase(
       return 'arrive';
   }
 }
+
+/** Step backward one prompt; `leaveRoom` means leave this room index. */
+export function previousGuidePhase(
+  phase: GuidePhase,
+  lidarAvailable: boolean
+): GuidePhase | 'leaveRoom' {
+  switch (phase) {
+    case 'arrive':
+      return 'leaveRoom';
+    case 'scan':
+      return 'arrive';
+    case 'condition':
+      return lidarAvailable ? 'scan' : 'arrive';
+    case 'damage':
+      return 'condition';
+    case 'photo':
+      return 'damage';
+    case 'advance':
+      return 'photo';
+    default:
+      return 'arrive';
+  }
+}

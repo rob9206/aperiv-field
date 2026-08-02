@@ -75,6 +75,15 @@ const en = {
   passwordLabel: 'Password',
   loading: 'Loading…',
   damageNotes: 'Describe the damage',
+  back: 'Back',
+  removePhoto: 'Remove',
+  cameraDenied:
+    'Camera access is needed. Enable it in Settings, then try again.',
+  photoFailed: 'Could not add the photo. Please try again.',
+  restoreFailed: 'Could not restore jobs on this device.',
+  saveFailed: 'Changes could not be saved on this device.',
+  measuredPending: 'Measured sq ft after export',
+  roomsScanned: 'Rooms scanned',
 } as const;
 
 const es: { [K in keyof typeof en]: string } = {
@@ -153,6 +162,15 @@ const es: { [K in keyof typeof en]: string } = {
   passwordLabel: 'Contraseña',
   loading: 'Cargando…',
   damageNotes: 'Describe el daño',
+  back: 'Atrás',
+  removePhoto: 'Quitar',
+  cameraDenied:
+    'Se necesita la cámara. Actívala en Ajustes e inténtalo de nuevo.',
+  photoFailed: 'No se pudo agregar la foto. Inténtalo de nuevo.',
+  restoreFailed: 'No se pudieron restaurar los trabajos en este teléfono.',
+  saveFailed: 'No se pudieron guardar los cambios en este teléfono.',
+  measuredPending: 'Pies² medidos tras exportar',
+  roomsScanned: 'Habitaciones escaneadas',
 };
 
 export type TranslationKey = keyof typeof en;
