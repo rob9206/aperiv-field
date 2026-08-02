@@ -51,12 +51,16 @@ function GuideButton({
   disabled = false,
   accent,
   onAccent,
+  secondary = false,
+  border,
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
   accent: string;
   onAccent: string;
+  secondary?: boolean;
+  border?: string;
 }) {
   return (
     <Pressable
@@ -65,14 +69,47 @@ function GuideButton({
       onPress={onPress}
       style={({ pressed }) => [
         styles.primaryButton,
-        { backgroundColor: accent },
+        secondary
+          ? {
+              backgroundColor: 'transparent',
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: border ?? accent,
+            }
+          : { backgroundColor: accent },
         disabled && styles.buttonDisabled,
         pressed && !disabled && styles.buttonPressed,
       ]}>
-      <ThemedText type="smallBold" style={{ color: onAccent }}>
+      <ThemedText
+        type="default"
+        style={[
+          styles.primaryButtonLabel,
+          { color: secondary ? accent : onAccent },
+        ]}>
         {label}
       </ThemedText>
     </Pressable>
+  );
+}
+
+function ProgressTrack({
+  progress,
+  track,
+  fill,
+}: {
+  progress: number;
+  track: string;
+  fill: string;
+}) {
+  const clamped = Math.max(0, Math.min(1, progress));
+  return (
+    <View style={[styles.progressTrack, { backgroundColor: track }]}>
+      <View
+        style={[
+          styles.progressFill,
+          { width: `${clamped * 100}%`, backgroundColor: fill },
+        ]}
+      />
+    </View>
   );
 }
 
@@ -394,32 +431,38 @@ export function ManualWalkthrough({
     setScreenStep('done');
   };
 
+  const guideProgress =
+    draft && draft.rooms.length > 0
+      ? (roomIndex + (phase === 'advance' ? 1 : 0.35)) / draft.rooms.length
+      : 0;
+
   return (
-    <ScrollView contentContainerStyle={styles.scrollContent}>
+    <ScrollView
+      contentContainerStyle={styles.scrollContent}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}>
       <View style={styles.topBar}>
         <LanguageToggle />
       </View>
 
       {hydrateError ? (
-        <ThemedText type="small" style={{ color: theme.danger }}>
+        <ThemedText type="default" style={{ color: theme.danger }}>
           {hydrateError}
         </ThemedText>
       ) : null}
 
       {screenStep === 'checkin' && (
-        <ThemedView type="backgroundElement" style={styles.card}>
-          <ThemedText type="heading">{t('startJob')}</ThemedText>
-          {!lidarAvailable ? (
-            <ThemedText type="small" themeColor="textSecondary">
-              {t('noLidarDevice')}
-            </ThemedText>
-          ) : (
-            <ThemedText type="small" themeColor="textSecondary">
-              {t('scanRequired')}
-            </ThemedText>
-          )}
+        <ThemedView
+          type="backgroundElement"
+          style={[styles.card, { borderColor: theme.border }]}>
+          <ThemedText type="heading" style={styles.prompt}>
+            {t('checkIn')}
+          </ThemedText>
+          <ThemedText type="default" themeColor="textSecondary">
+            {!lidarAvailable ? t('noLidarDevice') : t('scanRequired')}
+          </ThemedText>
           <View style={styles.fieldGroup}>
-            <ThemedText type="small" themeColor="textSecondary">
+            <ThemedText type="smallBold" themeColor="textSecondary">
               {t('property')}
             </ThemedText>
             <TextInput
@@ -432,7 +475,7 @@ export function ManualWalkthrough({
             />
           </View>
           <View style={styles.fieldGroup}>
-            <ThemedText type="small" themeColor="textSecondary">
+            <ThemedText type="smallBold" themeColor="textSecondary">
               {t('unit')}
             </ThemedText>
             <TextInput
@@ -445,7 +488,7 @@ export function ManualWalkthrough({
             />
           </View>
           <View style={styles.fieldGroup}>
-            <ThemedText type="small" themeColor="textSecondary">
+            <ThemedText type="smallBold" themeColor="textSecondary">
               {t('recordedSqftOptional')}
             </ThemedText>
             <TextInput
@@ -470,15 +513,26 @@ export function ManualWalkthrough({
       )}
 
       {screenStep === 'roomGuide' && draft && room && (
-        <ThemedView type="backgroundElement" style={styles.card}>
-          <ThemedText type="small" themeColor="textSecondary">
-            {draft.property} · {draft.unit} · {roomIndex + 1}/
-            {draft.rooms.length}
-          </ThemedText>
+        <ThemedView
+          type="backgroundElement"
+          style={[styles.card, { borderColor: theme.border }]}>
+          <View style={styles.guideMeta}>
+            <ThemedText type="smallBold" themeColor="textSecondary">
+              {draft.property} · {t('unit')} {draft.unit}
+            </ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              {t('roomStep')} {roomIndex + 1} {t('ofWord')} {draft.rooms.length}
+            </ThemedText>
+          </View>
+          <ProgressTrack
+            progress={guideProgress}
+            track={theme.backgroundSelected}
+            fill={theme.accent}
+          />
 
           {phase === 'arrive' && (
-            <>
-              <ThemedText type="heading">
+            <View style={styles.promptBlock}>
+              <ThemedText type="heading" style={styles.prompt}>
                 {t('goToRoom')} {room.name || t('rooms')}
               </ThemedText>
               <GuideButton
@@ -487,18 +541,23 @@ export function ManualWalkthrough({
                 accent={theme.accent}
                 onAccent={theme.onAccent}
               />
-              <Pressable onPress={skipRoom} style={styles.linkButton}>
-                <ThemedText type="small" themeColor="textSecondary">
-                  {t('skipRoom')}
-                </ThemedText>
-              </Pressable>
-            </>
+              <GuideButton
+                label={t('skipRoom')}
+                onPress={skipRoom}
+                accent={theme.accentText}
+                onAccent={theme.onAccent}
+                secondary
+                border={theme.border}
+              />
+            </View>
           )}
 
           {phase === 'scan' && (
-            <>
-              <ThemedText type="heading">{t('startScan')}</ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
+            <View style={styles.promptBlock}>
+              <ThemedText type="heading" style={styles.prompt}>
+                {t('startScan')}
+              </ThemedText>
+              <ThemedText type="default" themeColor="textSecondary">
                 {t('scanRequired')}
               </ThemedText>
               <GuideButton
@@ -509,15 +568,16 @@ export function ManualWalkthrough({
                 accent={theme.accent}
                 onAccent={theme.onAccent}
               />
-            </>
+            </View>
           )}
 
           {phase === 'condition' && (
-            <>
-              <ThemedText type="heading">{t('condition')}</ThemedText>
-              <View style={styles.chipRow}>
+            <View style={styles.promptBlock}>
+              <ThemedText type="heading" style={styles.prompt}>
+                {t('condition')}
+              </ThemedText>
+              <View style={styles.choiceStack}>
                 {CONDITIONS.map((condition) => {
-                  const active = room.condition === condition;
                   const fill = conditionFill[condition];
                   const label =
                     condition === 'good'
@@ -535,30 +595,29 @@ export function ManualWalkthrough({
                         updateGuide({ guidePhase: 'damage' }, rooms);
                         setShowDamageNote(false);
                       }}
-                      style={[
+                      style={({ pressed }) => [
                         styles.choiceChip,
-                        {
-                          backgroundColor: active
-                            ? fill.background
-                            : theme.backgroundSelected,
-                        },
+                        { backgroundColor: fill.background },
+                        pressed && styles.buttonPressed,
                       ]}>
                       <ThemedText
-                        type="smallBold"
-                        style={active ? { color: fill.label } : undefined}>
+                        type="default"
+                        style={[styles.choiceLabel, { color: fill.label }]}>
                         {label}
                       </ThemedText>
                     </Pressable>
                   );
                 })}
               </View>
-            </>
+            </View>
           )}
 
           {phase === 'damage' && (
-            <>
-              <ThemedText type="heading">{t('anyDamage')}</ThemedText>
-              <View style={styles.chipRow}>
+            <View style={styles.promptBlock}>
+              <ThemedText type="heading" style={styles.prompt}>
+                {t('anyDamage')}
+              </ThemedText>
+              <View style={styles.choiceStack}>
                 <Pressable
                   onPress={() => {
                     const rooms = draft.rooms.map((item, i) =>
@@ -569,19 +628,43 @@ export function ManualWalkthrough({
                     updateGuide({ guidePhase: 'photo' }, rooms);
                     setShowDamageNote(false);
                   }}
-                  style={[
+                  style={({ pressed }) => [
                     styles.choiceChip,
-                    { backgroundColor: theme.backgroundSelected },
+                    { backgroundColor: theme.successFill },
+                    pressed && styles.buttonPressed,
                   ]}>
-                  <ThemedText type="smallBold">{t('no')}</ThemedText>
+                  <ThemedText
+                    type="default"
+                    style={[
+                      styles.choiceLabel,
+                      { color: theme.onSuccessFill },
+                    ]}>
+                    {t('no')}
+                  </ThemedText>
                 </Pressable>
                 <Pressable
                   onPress={() => setShowDamageNote(true)}
-                  style={[
+                  style={({ pressed }) => [
                     styles.choiceChip,
-                    { backgroundColor: theme.backgroundSelected },
+                    {
+                      backgroundColor: showDamageNote
+                        ? theme.dangerFill
+                        : theme.backgroundSelected,
+                    },
+                    pressed && styles.buttonPressed,
                   ]}>
-                  <ThemedText type="smallBold">{t('yes')}</ThemedText>
+                  <ThemedText
+                    type="default"
+                    style={[
+                      styles.choiceLabel,
+                      {
+                        color: showDamageNote
+                          ? theme.onDangerFill
+                          : theme.text,
+                      },
+                    ]}>
+                    {t('yes')}
+                  </ThemedText>
                 </Pressable>
               </View>
               {showDamageNote ? (
@@ -591,6 +674,7 @@ export function ManualWalkthrough({
                     placeholder={t('damageNotes')}
                     placeholderTextColor={theme.textSecondary}
                     value={room.notes}
+                    multiline
                     onChangeText={(notes) => {
                       const rooms = draft.rooms.map((item, i) =>
                         i === roomIndex
@@ -608,26 +692,30 @@ export function ManualWalkthrough({
                   />
                 </>
               ) : null}
-            </>
+            </View>
           )}
 
           {phase === 'photo' && (
-            <>
-              <ThemedText type="heading">{t('takePhoto')}</ThemedText>
+            <View style={styles.promptBlock}>
+              <ThemedText type="heading" style={styles.prompt}>
+                {t('takePhoto')}
+              </ThemedText>
               {photoError ? (
-                <ThemedText type="small" style={{ color: theme.danger }}>
+                <ThemedText type="default" style={{ color: theme.danger }}>
                   {photoError}
                 </ThemedText>
               ) : null}
-              <View style={styles.photoRow}>
-                {room.photos.map((photo) => (
-                  <Image
-                    key={photo.id}
-                    source={{ uri: photo.uri }}
-                    style={styles.photoThumb}
-                  />
-                ))}
-              </View>
+              {room.photos.length > 0 ? (
+                <View style={styles.photoRow}>
+                  {room.photos.map((photo) => (
+                    <Image
+                      key={photo.id}
+                      source={{ uri: photo.uri }}
+                      style={styles.photoThumb}
+                    />
+                  ))}
+                </View>
+              ) : null}
               <GuideButton
                 label={t('takePhoto')}
                 onPress={() => {
@@ -636,13 +724,16 @@ export function ManualWalkthrough({
                 accent={theme.accent}
                 onAccent={theme.onAccent}
               />
-              <Pressable
+              <GuideButton
+                label={t('addFromLibrary')}
                 onPress={() => {
                   void addPhoto('library');
                 }}
-                style={styles.linkButton}>
-                <ThemedText type="linkPrimary">{t('addFromLibrary')}</ThemedText>
-              </Pressable>
+                accent={theme.accentText}
+                onAccent={theme.onAccent}
+                secondary
+                border={theme.border}
+              />
               <GuideButton
                 label={
                   roomIndex >= draft.rooms.length - 1
@@ -661,11 +752,11 @@ export function ManualWalkthrough({
                   {t('addRoom')}
                 </ThemedText>
               </Pressable>
-            </>
+            </View>
           )}
 
           {phase === 'advance' && (
-            <>
+            <View style={styles.promptBlock}>
               <GuideButton
                 label={t('nextRoom')}
                 onPress={() => goNextRoomOrFinish(false)}
@@ -675,36 +766,65 @@ export function ManualWalkthrough({
               <GuideButton
                 label={t('finishJob')}
                 onPress={() => goNextRoomOrFinish(true)}
-                accent={theme.accent}
+                accent={theme.accentText}
                 onAccent={theme.onAccent}
+                secondary
+                border={theme.border}
               />
-            </>
+            </View>
           )}
         </ThemedView>
       )}
 
       {screenStep === 'done' && draft && (
-        <ThemedView type="backgroundElement" style={styles.card}>
-          <ThemedText type="heading">
-            {draft.verificationStatus === 'verified'
-              ? t('jobVerified')
-              : t('jobUnverified')}
+        <ThemedView
+          type="backgroundElement"
+          style={[styles.card, { borderColor: theme.border }]}>
+          <View
+            style={[
+              styles.statusBanner,
+              {
+                backgroundColor:
+                  draft.verificationStatus === 'verified'
+                    ? theme.successFill
+                    : theme.warningFill,
+              },
+            ]}>
+            <ThemedText
+              type="heading"
+              style={{
+                color:
+                  draft.verificationStatus === 'verified'
+                    ? theme.onSuccessFill
+                    : theme.onWarningFill,
+              }}>
+              {draft.verificationStatus === 'verified'
+                ? t('jobVerified')
+                : t('jobUnverified')}
+            </ThemedText>
+          </View>
+          <ThemedText type="heading" style={styles.doneUnit}>
+            {draft.property}
           </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            {draft.property} · {draft.unit}
+          <ThemedText type="default" themeColor="textSecondary">
+            {t('unit')} {draft.unit}
           </ThemedText>
-          {recorded !== null ? (
-            <ThemedText type="smallBold">
-              {t('recordedSqftLabel')} {Math.round(recorded)} ·{' '}
+          <View
+            style={[
+              styles.measureBox,
+              { backgroundColor: theme.backgroundSelected },
+            ]}>
+            {recorded !== null ? (
+              <ThemedText type="heading" style={styles.measureLine}>
+                {t('recordedSqftLabel')} {Math.round(recorded)}
+              </ThemedText>
+            ) : null}
+            <ThemedText type="heading" style={styles.measureLine}>
               {t('measuredSqftLabel')} {Math.round(measured)}
             </ThemedText>
-          ) : (
-            <ThemedText type="smallBold">
-              {t('measuredSqftLabel')} {Math.round(measured)}
-            </ThemedText>
-          )}
+          </View>
           {savedMessage ? (
-            <ThemedText type="small" themeColor="textSecondary">
+            <ThemedText type="default" themeColor="textSecondary">
               {savedMessage}
             </ThemedText>
           ) : null}
@@ -723,6 +843,8 @@ export function ManualWalkthrough({
                 onPress={() => saveJob('unverified')}
                 accent={theme.accent}
                 onAccent={theme.onAccent}
+                secondary={lidarAvailable && draftHasScanMeasure(draft)}
+                border={theme.border}
               />
             </>
           ) : (
@@ -740,11 +862,14 @@ export function ManualWalkthrough({
                 accent={theme.accent}
                 onAccent={theme.onAccent}
               />
-              <Pressable
+              <GuideButton
+                label={t('myJobs')}
                 onPress={() => router.replace('/')}
-                style={styles.linkButton}>
-                <ThemedText type="linkPrimary">{t('myJobs')}</ThemedText>
-              </Pressable>
+                accent={theme.accentText}
+                onAccent={theme.onAccent}
+                secondary
+                border={theme.border}
+              />
             </>
           )}
         </ThemedView>
@@ -764,46 +889,72 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   card: {
-    gap: Spacing.three,
+    gap: Spacing.four,
     padding: Spacing.four,
     borderRadius: Spacing.three,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  guideMeta: {
+    gap: Spacing.one,
+  },
+  progressTrack: {
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  promptBlock: {
+    gap: Spacing.three,
+  },
+  prompt: {
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: '700',
   },
   fieldGroup: {
     gap: Spacing.one,
   },
   input: {
-    borderRadius: Spacing.two,
+    borderRadius: Spacing.three,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
     borderWidth: StyleSheet.hairlineWidth,
-    fontSize: 16,
-    minHeight: 48,
+    fontSize: 17,
+    minHeight: 52,
   },
   primaryButton: {
-    minHeight: 52,
-    borderRadius: Spacing.two,
+    minHeight: 56,
+    borderRadius: Spacing.three,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: Spacing.three,
+    paddingHorizontal: Spacing.four,
+  },
+  primaryButtonLabel: {
+    fontWeight: '700',
+    fontSize: 17,
   },
   buttonDisabled: {
     opacity: 0.45,
   },
   buttonPressed: {
-    opacity: 0.85,
+    opacity: 0.88,
   },
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  choiceStack: {
     gap: Spacing.two,
   },
   choiceChip: {
-    minHeight: MinTouchTarget + 8,
-    minWidth: 96,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.two,
+    minHeight: 56,
+    borderRadius: Spacing.three,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: Spacing.four,
+  },
+  choiceLabel: {
+    fontWeight: '700',
+    fontSize: 18,
   },
   photoRow: {
     flexDirection: 'row',
@@ -811,13 +962,32 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   photoThumb: {
-    width: 72,
-    height: 72,
+    width: 96,
+    height: 96,
     borderRadius: Spacing.two,
   },
   linkButton: {
     minHeight: MinTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  statusBanner: {
+    borderRadius: Spacing.three,
+    paddingVertical: Spacing.three,
+    paddingHorizontal: Spacing.three,
+    alignItems: 'center',
+  },
+  doneUnit: {
+    fontSize: 24,
+    lineHeight: 30,
+  },
+  measureBox: {
+    borderRadius: Spacing.three,
+    padding: Spacing.three,
+    gap: Spacing.one,
+  },
+  measureLine: {
+    fontSize: 20,
+    lineHeight: 28,
   },
 });

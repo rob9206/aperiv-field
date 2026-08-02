@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { MinTouchTarget, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import type { AppLocale } from '@/lib/i18n';
 import { useLocale } from '@/providers/locale-provider';
@@ -77,10 +77,10 @@ export function LanguageToggle() {
 }
 
 const styles = StyleSheet.create({
-  wrap: { flexDirection: 'row', gap: Spacing.two },
+  wrap: { flexDirection: 'row', gap: Spacing.one },
   chip: {
-    minHeight: MinTouchTarget,
-    minWidth: MinTouchTarget + 8,
+    minHeight: 40,
+    minWidth: 44,
     paddingHorizontal: Spacing.three,
     alignItems: 'center',
     justifyContent: 'center',

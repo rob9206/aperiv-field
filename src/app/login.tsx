@@ -5,6 +5,7 @@ import {
   Pressable,
   StyleSheet,
   TextInput,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -50,58 +51,72 @@ export default function LoginScreen() {
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.brand}>
-          <ThemedText type="heading" style={styles.brandTitle}>
-            {t('appName')}
-          </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            {t('tagline')}
-          </ThemedText>
+        <View style={styles.topRow}>
+          <View style={styles.brand}>
+            <ThemedText type="title" style={styles.brandTitle}>
+              {t('appName')}
+            </ThemedText>
+            <ThemedText type="default" themeColor="textSecondary">
+              {t('tagline')}
+            </ThemedText>
+          </View>
           <LanguageToggle />
-        </ThemedView>
-        <ThemedView type="backgroundElement" style={styles.card}>
+        </View>
+        <ThemedView
+          type="backgroundElement"
+          style={[styles.card, { borderColor: theme.border }]}>
           {!isConfigured ? (
-            <ThemedText type="small" themeColor="textSecondary">
+            <ThemedText type="default" themeColor="textSecondary">
               {t('signInUnavailable')}
             </ThemedText>
           ) : null}
-          <TextInput
-            style={[
-              styles.input,
-              {
-                backgroundColor: theme.background,
-                color: theme.text,
-                borderColor: theme.border,
-              },
-            ]}
-            placeholder={t('email')}
-            placeholderTextColor={theme.textSecondary}
-            autoCapitalize="none"
-            autoComplete="username"
-            keyboardType="email-address"
-            editable={isConfigured && !loading}
-            value={email}
-            onChangeText={setEmail}
-          />
-          <TextInput
-            style={[
-              styles.input,
-              {
-                backgroundColor: theme.background,
-                color: theme.text,
-                borderColor: theme.border,
-              },
-            ]}
-            placeholder={t('passwordLabel')}
-            placeholderTextColor={theme.textSecondary}
-            autoComplete="current-password"
-            secureTextEntry
-            editable={isConfigured && !loading}
-            value={password}
-            onChangeText={setPassword}
-          />
+          <View style={styles.field}>
+            <ThemedText type="smallBold" themeColor="textSecondary">
+              {t('email')}
+            </ThemedText>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.background,
+                  color: theme.text,
+                  borderColor: theme.border,
+                },
+              ]}
+              placeholder={t('email')}
+              placeholderTextColor={theme.textSecondary}
+              autoCapitalize="none"
+              autoComplete="username"
+              keyboardType="email-address"
+              editable={isConfigured && !loading}
+              value={email}
+              onChangeText={setEmail}
+            />
+          </View>
+          <View style={styles.field}>
+            <ThemedText type="smallBold" themeColor="textSecondary">
+              {t('passwordLabel')}
+            </ThemedText>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.background,
+                  color: theme.text,
+                  borderColor: theme.border,
+                },
+              ]}
+              placeholder={t('passwordLabel')}
+              placeholderTextColor={theme.textSecondary}
+              autoComplete="current-password"
+              secureTextEntry
+              editable={isConfigured && !loading}
+              value={password}
+              onChangeText={setPassword}
+            />
+          </View>
           {error ? (
-            <ThemedText type="small" style={{ color: theme.danger }}>
+            <ThemedText type="default" style={{ color: theme.danger }}>
               {error}
             </ThemedText>
           ) : null}
@@ -120,7 +135,7 @@ export default function LoginScreen() {
             {loading ? (
               <ActivityIndicator color={theme.onAccent} />
             ) : (
-              <ThemedText type="smallBold" style={{ color: theme.onAccent }}>
+              <ThemedText type="default" style={styles.buttonLabel}>
                 {t('signIn')}
               </ThemedText>
             )}
@@ -138,41 +153,57 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     paddingHorizontal: Spacing.four,
-    paddingTop: Spacing.four,
+    paddingTop: Spacing.three,
     gap: Spacing.four,
   },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: Spacing.three,
+  },
   brand: {
-    alignItems: 'center',
+    flex: 1,
     gap: Spacing.one,
-    paddingTop: Spacing.four,
   },
   brandTitle: {
-    fontSize: 26,
-    lineHeight: 32,
+    fontSize: 34,
+    lineHeight: 40,
+    fontWeight: '700',
   },
   card: {
     gap: Spacing.three,
-    paddingHorizontal: Spacing.three,
+    paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.four,
     borderRadius: Spacing.three,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  field: {
+    gap: Spacing.one,
   },
   input: {
-    borderRadius: Spacing.two,
+    borderRadius: Spacing.three,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
     borderWidth: StyleSheet.hairlineWidth,
-    fontSize: 16,
-    minHeight: 48,
+    fontSize: 17,
+    minHeight: 52,
   },
   button: {
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: Spacing.two,
+    borderRadius: Spacing.three,
     paddingVertical: Spacing.three,
-    minHeight: 52,
+    minHeight: 56,
+    marginTop: Spacing.one,
+  },
+  buttonLabel: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 17,
   },
   buttonPressed: {
-    opacity: 0.85,
+    opacity: 0.88,
   },
   buttonDisabled: {
     opacity: 0.45,

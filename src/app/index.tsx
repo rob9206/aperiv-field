@@ -1,13 +1,14 @@
 import { Link, router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { JobList } from '@/components/job-list';
 import { LanguageToggle } from '@/components/language-toggle';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { MinTouchTarget, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import {
   deleteDraftPhotos,
   loadDraftStore,
@@ -18,6 +19,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { useLocale } from '@/providers/locale-provider';
 
 export default function HomeScreen() {
+  const theme = useTheme();
   const { isConfigured, session, user, signOut, isLoading } = useAuth();
   const { t } = useLocale();
   const signedIn = !!session;
@@ -65,31 +67,41 @@ export default function HomeScreen() {
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.scroll}>
-          <ThemedView style={styles.hero}>
-            <ThemedText type="title" style={styles.title}>
-              {t('appName')}
-            </ThemedText>
-            <ThemedText themeColor="textSecondary" style={styles.subtitle}>
-              {t('tagline')}
-            </ThemedText>
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          showsVerticalScrollIndicator={false}>
+          <View style={styles.topRow}>
+            <View style={styles.brandBlock}>
+              <ThemedText type="title" style={styles.title}>
+                {t('appName')}
+              </ThemedText>
+              <ThemedText themeColor="textSecondary" style={styles.subtitle}>
+                {t('tagline')}
+              </ThemedText>
+            </View>
             <LanguageToggle />
-          </ThemedView>
+          </View>
 
           {!isConfigured ? (
-            <ThemedText type="small" themeColor="textSecondary">
+            <ThemedText type="default" themeColor="textSecondary">
               {t('signInUnavailable')}
             </ThemedText>
           ) : isLoading ? (
-            <ThemedText type="small" themeColor="textSecondary">
+            <ThemedText type="default" themeColor="textSecondary">
               {t('checkingSession')}
             </ThemedText>
           ) : signedIn ? (
             <>
-              <ThemedText type="small" themeColor="textSecondary">
-                {t('signedInAs')} {user?.email ?? ''}
-              </ThemedText>
-              <ThemedText type="heading">{t('myJobs')}</ThemedText>
+              <View style={styles.sectionHeader}>
+                <ThemedText type="heading" style={styles.sectionTitle}>
+                  {t('myJobs')}
+                </ThemedText>
+                {user?.email ? (
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {user.email}
+                  </ThemedText>
+                ) : null}
+              </View>
               {store ? (
                 <JobList
                   store={store}
@@ -102,7 +114,7 @@ export default function HomeScreen() {
                   }}
                 />
               ) : (
-                <ThemedText type="small" themeColor="textSecondary">
+                <ThemedText type="default" themeColor="textSecondary">
                   {t('loading')}
                 </ThemedText>
               )}
@@ -118,16 +130,23 @@ export default function HomeScreen() {
               </Pressable>
             </>
           ) : (
-            <>
-              <ThemedText type="small" themeColor="textSecondary">
+            <View style={styles.signedOut}>
+              <ThemedText type="default" themeColor="textSecondary" style={styles.signedOutCopy}>
                 {t('signInToStart')}
               </ThemedText>
-              <Link href="/login" style={styles.actionLink}>
-                <ThemedText type="linkPrimary" style={styles.primaryAction}>
-                  {t('signIn')}
-                </ThemedText>
+              <Link href="/login" asChild>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.signInButton,
+                    { backgroundColor: theme.accent },
+                    pressed && styles.pressed,
+                  ]}>
+                  <ThemedText type="default" style={styles.signInLabel}>
+                    {t('signIn')}
+                  </ThemedText>
+                </Pressable>
               </Link>
-            </>
+            </View>
           )}
         </ScrollView>
       </SafeAreaView>
@@ -144,34 +163,63 @@ const styles = StyleSheet.create({
   },
   scroll: {
     paddingHorizontal: Spacing.four,
-    gap: Spacing.three,
-    paddingBottom: Spacing.five,
+    gap: Spacing.four,
+    paddingTop: Spacing.three,
+    paddingBottom: Spacing.six,
   },
-  hero: {
-    alignItems: 'center',
-    gap: Spacing.two,
-    paddingTop: Spacing.five,
-    paddingBottom: Spacing.two,
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: Spacing.three,
+  },
+  brandBlock: {
+    flex: 1,
+    gap: Spacing.one,
   },
   title: {
-    textAlign: 'center',
-    fontSize: 40,
-    lineHeight: 44,
+    fontSize: 34,
+    lineHeight: 40,
+    fontWeight: '700',
   },
   subtitle: {
-    textAlign: 'center',
-    maxWidth: 320,
+    maxWidth: 280,
+    fontSize: 15,
+    lineHeight: 22,
   },
-  actionLink: {
-    paddingVertical: Spacing.one,
+  sectionHeader: {
+    gap: Spacing.one,
   },
-  primaryAction: {
-    fontSize: 16,
-    lineHeight: 24,
-    fontWeight: '600',
+  sectionTitle: {
+    fontSize: 22,
+    lineHeight: 28,
+  },
+  signedOut: {
+    gap: Spacing.four,
+    paddingTop: Spacing.two,
+  },
+  signedOutCopy: {
+    fontSize: 17,
+    lineHeight: 26,
+  },
+  signInButton: {
+    minHeight: 56,
+    borderRadius: Spacing.three,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  signInLabel: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 17,
   },
   signOut: {
-    paddingVertical: Spacing.three,
+    minHeight: MinTouchTarget,
     alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: Spacing.two,
+  },
+  pressed: {
+    opacity: 0.88,
   },
 });
