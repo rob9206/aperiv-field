@@ -838,7 +838,6 @@ export function ManualWalkthrough({
                 onPress={() =>
                   goNextRoomOrFinish(roomIndex >= draft.rooms.length - 1)
                 }
-                disabled={room.photos.length < 1}
                 accent={theme.accent}
                 onAccent={theme.onAccent}
               />
