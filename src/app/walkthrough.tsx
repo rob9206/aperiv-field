@@ -237,7 +237,7 @@ export default function WalkthroughScreen() {
                     onPress={() => void finishScan()}
                     style={({ pressed }) => [
                       styles.overlayButton,
-                      styles.doneButton,
+                      { backgroundColor: theme.accent },
                       pressed && styles.buttonPressed,
                     ]}>
                     <ThemedText type="smallBold" style={styles.overlayText}>
@@ -248,7 +248,7 @@ export default function WalkthroughScreen() {
               </>
             ) : (
               <View style={styles.processingCard}>
-                <ActivityIndicator color="#3c87f7" size="large" />
+                <ActivityIndicator color="#ffffff" size="large" />
                 <ThemedText type="smallBold" style={styles.overlayText}>
                   Processing room scan…
                 </ThemedText>
@@ -270,7 +270,7 @@ export default function WalkthroughScreen() {
         <SafeAreaView style={styles.safeArea} edges={['bottom', 'left', 'right']}>
           {scanState.phase === 'checking' && (
             <ThemedView type="backgroundElement" style={[styles.card, styles.centeredCard]}>
-              <ActivityIndicator color="#3c87f7" size="large" />
+              <ActivityIndicator color={theme.accent} size="large" />
               <ThemedText type="small" themeColor="textSecondary">
                 Preparing walkthrough capture…
               </ThemedText>
@@ -290,7 +290,7 @@ export default function WalkthroughScreen() {
 
           {scanState.phase === 'ready' && (
             <ThemedView type="backgroundElement" style={styles.card}>
-              <ThemedText type="subtitle">Room scan</ThemedText>
+              <ThemedText type="heading">Room scan</ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
                 Walk the room slowly so LiDAR can capture walls, openings, fixtures, and
                 furniture. You can save the finished model and share both source files.
@@ -300,6 +300,7 @@ export default function WalkthroughScreen() {
                 onPress={beginScan}
                 style={({ pressed }) => [
                   styles.primaryButton,
+                  { backgroundColor: theme.accent },
                   pressed && styles.buttonPressed,
                 ]}>
                 <ThemedText type="smallBold" style={styles.overlayText}>
@@ -311,7 +312,7 @@ export default function WalkthroughScreen() {
                 onPress={() => enterManual(true)}
                 style={({ pressed }) => [
                   styles.secondaryButton,
-                  { borderColor: theme.textSecondary },
+                  { borderColor: theme.border },
                   pressed && styles.buttonPressed,
                 ]}>
                 <ThemedText type="smallBold">Back to manual walkthrough</ThemedText>
@@ -321,7 +322,7 @@ export default function WalkthroughScreen() {
 
           {scanState.phase === 'complete' && (
             <ThemedView type="backgroundElement" style={styles.card}>
-              <ThemedText type="subtitle">Scan saved</ThemedText>
+              <ThemedText type="heading">Scan saved</ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
                 Both RoomPlan files are stored locally on this device.
               </ThemedText>
@@ -330,7 +331,7 @@ export default function WalkthroughScreen() {
                 <ThemedText type="smallBold">{fileName(scanState.results.jsonPath)}</ThemedText>
               </ThemedView>
               {scanState.shareError && (
-                <ThemedText type="small" style={styles.errorText}>
+                <ThemedText type="small" style={{ color: theme.danger }}>
                   {scanState.shareError}
                 </ThemedText>
               )}
@@ -339,6 +340,7 @@ export default function WalkthroughScreen() {
                 onPress={() => void shareResults(scanState.results)}
                 style={({ pressed }) => [
                   styles.primaryButton,
+                  { backgroundColor: theme.accent },
                   pressed && styles.buttonPressed,
                 ]}>
                 <ThemedText type="smallBold" style={styles.overlayText}>
@@ -350,7 +352,7 @@ export default function WalkthroughScreen() {
                 onPress={() => enterManual(true)}
                 style={({ pressed }) => [
                   styles.secondaryButton,
-                  { borderColor: theme.textSecondary },
+                  { borderColor: theme.border },
                   pressed && styles.buttonPressed,
                 ]}>
                 <ThemedText type="smallBold">Back to walkthrough</ThemedText>
@@ -360,7 +362,7 @@ export default function WalkthroughScreen() {
                 onPress={beginScan}
                 style={({ pressed }) => [
                   styles.secondaryButton,
-                  { borderColor: theme.textSecondary },
+                  { borderColor: theme.border },
                   pressed && styles.buttonPressed,
                 ]}>
                 <ThemedText type="smallBold">Re-scan</ThemedText>
@@ -370,8 +372,8 @@ export default function WalkthroughScreen() {
 
           {scanState.phase === 'error' && (
             <ThemedView type="backgroundElement" style={styles.card}>
-              <ThemedText type="subtitle">Scan interrupted</ThemedText>
-              <ThemedText type="small" style={styles.errorText}>
+              <ThemedText type="heading">Scan interrupted</ThemedText>
+              <ThemedText type="small" style={{ color: theme.danger }}>
                 {scanState.message}
               </ThemedText>
               <Pressable
@@ -379,6 +381,7 @@ export default function WalkthroughScreen() {
                 onPress={() => enterManual(true)}
                 style={({ pressed }) => [
                   styles.primaryButton,
+                  { backgroundColor: theme.accent },
                   pressed && styles.buttonPressed,
                 ]}>
                 <ThemedText type="smallBold" style={styles.overlayText}>
@@ -393,7 +396,7 @@ export default function WalkthroughScreen() {
                 }}
                 style={({ pressed }) => [
                   styles.secondaryButton,
-                  { borderColor: theme.textSecondary },
+                  { borderColor: theme.border },
                   pressed && styles.buttonPressed,
                 ]}>
                 <ThemedText type="smallBold">Try LiDAR again</ThemedText>
@@ -430,7 +433,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
     borderRadius: Spacing.two,
-    backgroundColor: '#3c87f7',
     minHeight: 48,
   },
   secondaryButton: {
@@ -482,9 +484,6 @@ const styles = StyleSheet.create({
   cancelButton: {
     backgroundColor: 'rgba(35, 35, 38, 0.88)',
   },
-  doneButton: {
-    backgroundColor: '#3c87f7',
-  },
   processingCard: {
     alignSelf: 'center',
     gap: Spacing.two,
@@ -506,8 +505,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
     borderRadius: Spacing.two,
-  },
-  errorText: {
-    color: '#d13c3c',
   },
 });

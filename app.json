@@ -13,7 +13,7 @@
       "icon": "./assets/expo.icon",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSCameraUsageDescription": "Aperiv Field uses the camera and LiDAR sensor to scan room geometry during walkthroughs."
+        "NSCameraUsageDescription": "Aperiv Field uses the camera to capture room photos and to scan room geometry with LiDAR during walkthroughs."
       }
     },
     "android": {
@@ -32,6 +32,14 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Aperiv Field uses the camera to capture room photos and to scan room geometry with LiDAR during walkthroughs.",
+          "photosPermission": "Aperiv Field accesses your photo library so you can attach existing photos to a walkthrough.",
+          "microphonePermission": false
+        }
+      ],
       [
         "expo-splash-screen",
         {

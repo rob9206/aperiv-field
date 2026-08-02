@@ -47,12 +47,19 @@ export default function LoginScreen() {
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
+        <ThemedView style={styles.brand}>
+          <ThemedText type="heading" style={styles.brandTitle}>
+            Aperiv Field
+          </ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            On-site turnover walkthroughs and capture.
+          </ThemedText>
+        </ThemedView>
         <ThemedView type="backgroundElement" style={styles.card}>
-          <ThemedText type="subtitle">Sign in</ThemedText>
           {!isConfigured ? (
             <ThemedText type="small" themeColor="textSecondary">
-              Supabase is not configured. Auth is a placeholder until
-              EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY are set.
+              Sign-in is unavailable in this build. Please update the app or
+              contact support.
             </ThemedText>
           ) : null}
           <TextInput
@@ -61,7 +68,7 @@ export default function LoginScreen() {
               {
                 backgroundColor: theme.background,
                 color: theme.text,
-                borderColor: theme.backgroundSelected,
+                borderColor: theme.border,
               },
             ]}
             placeholder="Email"
@@ -79,7 +86,7 @@ export default function LoginScreen() {
               {
                 backgroundColor: theme.background,
                 color: theme.text,
-                borderColor: theme.backgroundSelected,
+                borderColor: theme.border,
               },
             ]}
             placeholder="Password"
@@ -91,7 +98,7 @@ export default function LoginScreen() {
             onChangeText={setPassword}
           />
           {error ? (
-            <ThemedText type="small" style={styles.error}>
+            <ThemedText type="small" style={{ color: theme.danger }}>
               {error}
             </ThemedText>
           ) : null}
@@ -103,13 +110,14 @@ export default function LoginScreen() {
             }}
             style={({ pressed }) => [
               styles.button,
+              { backgroundColor: theme.accent },
               (!isConfigured || loading) && styles.buttonDisabled,
               pressed && isConfigured && !loading && styles.buttonPressed,
             ]}>
             {loading ? (
-              <ActivityIndicator color="#ffffff" />
+              <ActivityIndicator color={theme.onAccent} />
             ) : (
-              <ThemedText type="smallBold" style={styles.buttonLabel}>
+              <ThemedText type="smallBold" style={{ color: theme.onAccent }}>
                 Sign in
               </ThemedText>
             )}
@@ -128,6 +136,16 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: Spacing.four,
     paddingTop: Spacing.four,
+    gap: Spacing.four,
+  },
+  brand: {
+    alignItems: 'center',
+    gap: Spacing.one,
+    paddingTop: Spacing.four,
+  },
+  brandTitle: {
+    fontSize: 26,
+    lineHeight: 32,
   },
   card: {
     gap: Spacing.three,
@@ -148,7 +166,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: Spacing.two,
     paddingVertical: Spacing.three,
-    backgroundColor: '#3c87f7',
     minHeight: 48,
   },
   buttonPressed: {
@@ -156,11 +173,5 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.45,
-  },
-  buttonLabel: {
-    color: '#ffffff',
-  },
-  error: {
-    color: '#B42318',
   },
 });

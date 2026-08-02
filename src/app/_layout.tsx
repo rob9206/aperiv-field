@@ -42,7 +42,10 @@ function RootNavigator() {
 
   return (
     <Stack>
-      <Stack.Screen name="index" options={{ title: 'Aperiv Field' }} />
+      <Stack.Screen
+        name="index"
+        options={{ title: 'Aperiv Field', headerShown: false }}
+      />
       <Stack.Screen name="login" options={{ title: 'Sign in' }} />
       <Stack.Protected guard={!!session}>
         <Stack.Screen name="walkthrough" options={{ title: 'Walkthrough' }} />

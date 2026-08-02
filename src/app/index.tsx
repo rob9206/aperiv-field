@@ -24,15 +24,14 @@ export default function HomeScreen() {
         </ThemedView>
 
         <ThemedView type="backgroundElement" style={styles.card}>
-          <ThemedText type="smallBold">Status</ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
             {!isConfigured
-              ? 'Supabase not configured — set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.'
+              ? 'Sign-in is unavailable in this build. Please update the app or contact support.'
               : isLoading
                 ? 'Checking session…'
                 : signedIn
                   ? `Signed in as ${user?.email ?? 'user'}.`
-                  : 'Supabase configured — sign in to start a walkthrough.'}
+                  : 'Sign in to start a walkthrough.'}
           </ThemedText>
         </ThemedView>
 
@@ -40,7 +39,7 @@ export default function HomeScreen() {
           {signedIn ? (
             <>
               <Link href="/walkthrough" style={styles.actionLink}>
-                <ThemedText type="smallBold" style={styles.primaryAction}>
+                <ThemedText type="linkPrimary" style={styles.primaryAction}>
                   Start walkthrough →
                 </ThemedText>
               </Link>
@@ -57,7 +56,7 @@ export default function HomeScreen() {
             </>
           ) : (
             <Link href="/login" style={styles.actionLink}>
-              <ThemedText type="smallBold" style={styles.primaryAction}>
+              <ThemedText type="linkPrimary" style={styles.primaryAction}>
                 Sign in →
               </ThemedText>
             </Link>
@@ -102,8 +101,8 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.one,
   },
   primaryAction: {
-    color: '#3c87f7',
     fontSize: 16,
     lineHeight: 24,
+    fontWeight: '600',
   },
 });
