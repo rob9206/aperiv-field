@@ -42,6 +42,7 @@ function fileName(path: string): string {
 export default function WalkthroughScreen() {
   const theme = useTheme();
   const [scanState, setScanState] = useState<ScanState>({ phase: 'checking' });
+  const [scanCompletedToken, setScanCompletedToken] = useState(0);
   const activeScanId = useRef<string | null>(null);
   const startRequested = useRef(false);
   const stopRequested = useRef(false);
@@ -78,6 +79,7 @@ export default function WalkthroughScreen() {
 
     try {
       const results = await exportResults(scanId);
+      setScanCompletedToken((token) => token + 1);
       setScanState({ phase: 'complete', results });
     } catch (error) {
       setScanState({ phase: 'error', message: errorMessage(error) });
@@ -280,6 +282,7 @@ export default function WalkthroughScreen() {
           {scanState.phase === 'manual' && (
             <ManualWalkthrough
               lidarAvailable={scanState.lidarAvailable}
+              scanCompletedToken={scanCompletedToken}
               onOpenLidar={
                 scanState.lidarAvailable
                   ? () => setScanState({ phase: 'ready' })
@@ -293,7 +296,7 @@ export default function WalkthroughScreen() {
               <ThemedText type="heading">Room scan</ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
                 Walk the room slowly so LiDAR can capture walls, openings, fixtures, and
-                furniture. You can save the finished model and share both source files.
+                furniture.
               </ThemedText>
               <Pressable
                 accessibilityRole="button"
@@ -315,7 +318,7 @@ export default function WalkthroughScreen() {
                   { borderColor: theme.border },
                   pressed && styles.buttonPressed,
                 ]}>
-                <ThemedText type="smallBold">Back to manual walkthrough</ThemedText>
+                <ThemedText type="smallBold">Back</ThemedText>
               </Pressable>
             </ThemedView>
           )}
@@ -324,7 +327,7 @@ export default function WalkthroughScreen() {
             <ThemedView type="backgroundElement" style={styles.card}>
               <ThemedText type="heading">Scan saved</ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
-                Both RoomPlan files are stored locally on this device.
+                Continue the guided job for condition and photos.
               </ThemedText>
               <ThemedView style={styles.fileList}>
                 <ThemedText type="smallBold">{fileName(scanState.results.usdzPath)}</ThemedText>
@@ -355,7 +358,7 @@ export default function WalkthroughScreen() {
                   { borderColor: theme.border },
                   pressed && styles.buttonPressed,
                 ]}>
-                <ThemedText type="smallBold">Back to walkthrough</ThemedText>
+                <ThemedText type="smallBold">Continue job</ThemedText>
               </Pressable>
               <Pressable
                 accessibilityRole="button"

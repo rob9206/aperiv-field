@@ -1,67 +1,135 @@
-import { Link } from 'expo-router';
-import { Pressable, StyleSheet } from 'react-native';
+import { Link, router } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { JobList } from '@/components/job-list';
+import { LanguageToggle } from '@/components/language-toggle';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import {
+  deleteDraftPhotos,
+  loadDraftStore,
+  saveDraftStore,
+  type DraftStore,
+} from '@/lib/walkthrough-draft';
 import { useAuth } from '@/providers/auth-provider';
+import { useLocale } from '@/providers/locale-provider';
 
 export default function HomeScreen() {
   const { isConfigured, session, user, signOut, isLoading } = useAuth();
+  const { t } = useLocale();
   const signedIn = !!session;
+  const [store, setStore] = useState<DraftStore | null>(null);
+
+  const refreshStore = useCallback(() => {
+    void loadDraftStore().then(setStore, () =>
+      setStore({ activeDraftId: null, drafts: {} })
+    );
+  }, []);
+
+  useEffect(() => {
+    if (signedIn) {
+      refreshStore();
+    }
+  }, [signedIn, refreshStore]);
+
+  const onNewJob = () => {
+    router.push({ pathname: '/walkthrough', params: { mode: 'new' } });
+  };
+
+  const onOpenJob = async (id: string) => {
+    const current = store ?? (await loadDraftStore());
+    const next: DraftStore = { ...current, activeDraftId: id };
+    await saveDraftStore(next);
+    setStore(next);
+    router.push({
+      pathname: '/walkthrough',
+      params: { mode: 'resume', id },
+    });
+  };
+
+  const onDeleteJob = async (id: string) => {
+    const current = store ?? (await loadDraftStore());
+    deleteDraftPhotos(id);
+    const { [id]: _removed, ...rest } = current.drafts;
+    const next: DraftStore = {
+      activeDraftId: current.activeDraftId === id ? null : current.activeDraftId,
+      drafts: rest,
+    };
+    await saveDraftStore(next);
+    setStore(next);
+  };
 
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.hero}>
-          <ThemedText type="title" style={styles.title}>
-            Aperiv Field
-          </ThemedText>
-          <ThemedText themeColor="textSecondary" style={styles.subtitle}>
-            On-site turnover walkthroughs and capture.
-          </ThemedText>
-        </ThemedView>
+        <ScrollView contentContainerStyle={styles.scroll}>
+          <ThemedView style={styles.hero}>
+            <ThemedText type="title" style={styles.title}>
+              {t('appName')}
+            </ThemedText>
+            <ThemedText themeColor="textSecondary" style={styles.subtitle}>
+              {t('tagline')}
+            </ThemedText>
+            <LanguageToggle />
+          </ThemedView>
 
-        <ThemedView type="backgroundElement" style={styles.card}>
-          <ThemedText type="small" themeColor="textSecondary">
-            {!isConfigured
-              ? 'Sign-in is unavailable in this build. Please update the app or contact support.'
-              : isLoading
-                ? 'Checking session…'
-                : signedIn
-                  ? `Signed in as ${user?.email ?? 'user'}.`
-                  : 'Sign in to start a walkthrough.'}
-          </ThemedText>
-        </ThemedView>
-
-        <ThemedView type="backgroundElement" style={styles.card}>
-          {signedIn ? (
+          {!isConfigured ? (
+            <ThemedText type="small" themeColor="textSecondary">
+              {t('signInUnavailable')}
+            </ThemedText>
+          ) : isLoading ? (
+            <ThemedText type="small" themeColor="textSecondary">
+              {t('checkingSession')}
+            </ThemedText>
+          ) : signedIn ? (
             <>
-              <Link href="/walkthrough" style={styles.actionLink}>
-                <ThemedText type="linkPrimary" style={styles.primaryAction}>
-                  Start walkthrough →
+              <ThemedText type="small" themeColor="textSecondary">
+                {t('signedInAs')} {user?.email ?? ''}
+              </ThemedText>
+              <ThemedText type="heading">{t('myJobs')}</ThemedText>
+              {store ? (
+                <JobList
+                  store={store}
+                  onNewJob={onNewJob}
+                  onOpenJob={(id) => {
+                    void onOpenJob(id);
+                  }}
+                  onDeleteJob={(id) => {
+                    void onDeleteJob(id);
+                  }}
+                />
+              ) : (
+                <ThemedText type="small" themeColor="textSecondary">
+                  {t('loading')}
                 </ThemedText>
-              </Link>
+              )}
               <Pressable
                 accessibilityRole="button"
                 onPress={() => {
                   void signOut();
                 }}
-                style={styles.actionLink}>
+                style={styles.signOut}>
                 <ThemedText type="small" themeColor="textSecondary">
-                  Sign out
+                  {t('signOut')}
                 </ThemedText>
               </Pressable>
             </>
           ) : (
-            <Link href="/login" style={styles.actionLink}>
-              <ThemedText type="linkPrimary" style={styles.primaryAction}>
-                Sign in →
+            <>
+              <ThemedText type="small" themeColor="textSecondary">
+                {t('signInToStart')}
               </ThemedText>
-            </Link>
+              <Link href="/login" style={styles.actionLink}>
+                <ThemedText type="linkPrimary" style={styles.primaryAction}>
+                  {t('signIn')}
+                </ThemedText>
+              </Link>
+            </>
           )}
-        </ThemedView>
+        </ScrollView>
       </SafeAreaView>
     </ThemedView>
   );
@@ -73,14 +141,17 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
+  },
+  scroll: {
     paddingHorizontal: Spacing.four,
     gap: Spacing.three,
+    paddingBottom: Spacing.five,
   },
   hero: {
     alignItems: 'center',
     gap: Spacing.two,
     paddingTop: Spacing.five,
-    paddingBottom: Spacing.four,
+    paddingBottom: Spacing.two,
   },
   title: {
     textAlign: 'center',
@@ -91,12 +162,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     maxWidth: 320,
   },
-  card: {
-    gap: Spacing.two,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.three,
-  },
   actionLink: {
     paddingVertical: Spacing.one,
   },
@@ -104,5 +169,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24,
     fontWeight: '600',
+  },
+  signOut: {
+    paddingVertical: Spacing.three,
+    alignItems: 'center',
   },
 });

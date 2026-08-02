@@ -8,14 +8,17 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { LanguageToggle } from '@/components/language-toggle';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/providers/auth-provider';
+import { useLocale } from '@/providers/locale-provider';
 
 export default function LoginScreen() {
   const theme = useTheme();
+  const { t } = useLocale();
   const { isConfigured, signIn, session } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -49,17 +52,17 @@ export default function LoginScreen() {
       <SafeAreaView style={styles.safeArea}>
         <ThemedView style={styles.brand}>
           <ThemedText type="heading" style={styles.brandTitle}>
-            Aperiv Field
+            {t('appName')}
           </ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
-            On-site turnover walkthroughs and capture.
+            {t('tagline')}
           </ThemedText>
+          <LanguageToggle />
         </ThemedView>
         <ThemedView type="backgroundElement" style={styles.card}>
           {!isConfigured ? (
             <ThemedText type="small" themeColor="textSecondary">
-              Sign-in is unavailable in this build. Please update the app or
-              contact support.
+              {t('signInUnavailable')}
             </ThemedText>
           ) : null}
           <TextInput
@@ -71,7 +74,7 @@ export default function LoginScreen() {
                 borderColor: theme.border,
               },
             ]}
-            placeholder="Email"
+            placeholder={t('email')}
             placeholderTextColor={theme.textSecondary}
             autoCapitalize="none"
             autoComplete="username"
@@ -89,7 +92,7 @@ export default function LoginScreen() {
                 borderColor: theme.border,
               },
             ]}
-            placeholder="Password"
+            placeholder={t('passwordLabel')}
             placeholderTextColor={theme.textSecondary}
             autoComplete="current-password"
             secureTextEntry
@@ -118,7 +121,7 @@ export default function LoginScreen() {
               <ActivityIndicator color={theme.onAccent} />
             ) : (
               <ThemedText type="smallBold" style={{ color: theme.onAccent }}>
-                Sign in
+                {t('signIn')}
               </ThemedText>
             )}
           </Pressable>
@@ -166,7 +169,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: Spacing.two,
     paddingVertical: Spacing.three,
-    minHeight: 48,
+    minHeight: 52,
   },
   buttonPressed: {
     opacity: 0.85,
