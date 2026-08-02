@@ -1,6 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Directory, File, Paths } from 'expo-file-system';
 
+import { parseDraftStoreRaw } from './draft-store-parse';
+
+export { isValidDraftStore, parseDraftStoreRaw } from './draft-store-parse';
+
 export type RoomCondition = 'good' | 'watch' | 'issue';
 
 export type FindingSeverity = 'low' | 'medium' | 'high';
@@ -17,6 +21,16 @@ export type RoomPhoto = {
   uri: string;
 };
 
+export type GuidePhase =
+  | 'arrive'
+  | 'scan'
+  | 'condition'
+  | 'damage'
+  | 'photo'
+  | 'advance';
+
+export type VerificationStatus = 'verified' | 'unverified';
+
 export type RoomCapture = {
   id: string;
   name: string;
@@ -24,6 +38,9 @@ export type RoomCapture = {
   condition: RoomCondition;
   photos: RoomPhoto[];
   notes: string;
+  hasDamage?: boolean;
+  scanned?: boolean;
+  measuredSqftFromScan?: number;
 };
 
 export type ManualWalkthroughDraft = {
@@ -35,6 +52,10 @@ export type ManualWalkthroughDraft = {
   findings: WalkthroughFinding[];
   createdAt: string;
   completedAt?: string;
+  guideRoomIndex?: number;
+  guidePhase?: GuidePhase;
+  measuredSqftFromScan?: number;
+  verificationStatus?: VerificationStatus;
 };
 
 export type DraftStore = {
@@ -42,8 +63,8 @@ export type DraftStore = {
   drafts: Record<string, ManualWalkthroughDraft>;
 };
 
-const STORE_KEY = 'aperiv.field.walkthrough.drafts.v2';
-const LEGACY_DRAFT_KEY = 'aperiv.field.walkthrough.draft.v1';
+export const STORE_KEY = 'aperiv.field.walkthrough.drafts.v2';
+export const LEGACY_DRAFT_KEY = 'aperiv.field.walkthrough.draft.v1';
 const PHOTOS_DIR = 'walkthrough-photos';
 
 export const DEFAULT_ROOM_NAMES = ['Living', 'Kitchen', 'Bedroom', 'Bathroom'];
@@ -60,18 +81,28 @@ export function createRoom(name: string): RoomCapture {
     condition: 'good',
     photos: [],
     notes: '',
+    hasDamage: false,
+    scanned: false,
   };
 }
 
-export function createDraft(property: string, unit: string, recordedSqft: string): ManualWalkthroughDraft {
+export function createDraft(
+  property: string,
+  unit: string,
+  recordedSqft: string,
+  roomNames: string[] = DEFAULT_ROOM_NAMES
+): ManualWalkthroughDraft {
   return {
     id: newId('draft'),
     property: property.trim(),
     unit: unit.trim(),
     recordedSqft: recordedSqft.trim(),
-    rooms: DEFAULT_ROOM_NAMES.map(createRoom),
+    rooms: roomNames.map(createRoom),
     findings: [],
     createdAt: new Date().toISOString(),
+    guideRoomIndex: 0,
+    guidePhase: 'arrive',
+    verificationStatus: 'unverified',
   };
 }
 
@@ -106,46 +137,72 @@ function migrateLegacyDraft(legacy: LegacyDraft): ManualWalkthroughDraft {
       condition: room.condition,
       photos: [],
       notes: room.notes,
+      hasDamage: false,
+      scanned: false,
     })),
     findings: legacy.findings,
     createdAt: new Date().toISOString(),
     completedAt: legacy.completedAt,
+    guideRoomIndex: 0,
+    guidePhase: 'arrive',
+    verificationStatus: legacy.completedAt ? 'unverified' : 'unverified',
   };
 }
 
-export async function loadDraftStore(): Promise<DraftStore> {
-  const raw = await AsyncStorage.getItem(STORE_KEY);
-  if (raw) {
-    const parsed = JSON.parse(raw) as DraftStore;
-    if (parsed && typeof parsed.drafts === 'object') {
-      return parsed;
+async function loadLegacyStore(): Promise<DraftStore | null> {
+  const legacyRaw = await AsyncStorage.getItem(LEGACY_DRAFT_KEY);
+  if (!legacyRaw) {
+    return null;
+  }
+  try {
+    const legacy = JSON.parse(legacyRaw) as LegacyDraft;
+    if (legacy?.unit && Array.isArray(legacy.rooms)) {
+      const draft = migrateLegacyDraft(legacy);
+      const store: DraftStore = {
+        activeDraftId: draft.id,
+        drafts: { [draft.id]: draft },
+      };
+      await saveDraftStore(store);
+      await AsyncStorage.removeItem(LEGACY_DRAFT_KEY);
+      return store;
     }
+  } catch {
+    // Unreadable legacy draft — fall through to an empty store.
+  }
+  return null;
+}
+
+export async function loadDraftStore(): Promise<DraftStore> {
+  try {
+    const raw = await AsyncStorage.getItem(STORE_KEY);
+    const parsed = parseDraftStoreRaw(raw);
+    if (parsed) {
+      return parsed as DraftStore;
+    }
+  } catch {
+    // Corrupt or unreadable v2 — try legacy recovery next.
   }
 
-  const legacyRaw = await AsyncStorage.getItem(LEGACY_DRAFT_KEY);
-  if (legacyRaw) {
-    try {
-      const legacy = JSON.parse(legacyRaw) as LegacyDraft;
-      if (legacy?.unit && Array.isArray(legacy.rooms)) {
-        const draft = migrateLegacyDraft(legacy);
-        const store: DraftStore = {
-          activeDraftId: draft.id,
-          drafts: { [draft.id]: draft },
-        };
-        await saveDraftStore(store);
-        await AsyncStorage.removeItem(LEGACY_DRAFT_KEY);
-        return store;
-      }
-    } catch {
-      // Unreadable legacy draft — fall through to an empty store.
-    }
+  const legacy = await loadLegacyStore();
+  if (legacy) {
+    return legacy;
   }
 
   return { activeDraftId: null, drafts: {} };
 }
 
+let saveChain: Promise<void> = Promise.resolve();
+
 export async function saveDraftStore(store: DraftStore): Promise<void> {
-  await AsyncStorage.setItem(STORE_KEY, JSON.stringify(store));
+  const write = async () => {
+    await AsyncStorage.setItem(STORE_KEY, JSON.stringify(store));
+  };
+  const next = saveChain.then(write, write);
+  saveChain = next.then(
+    () => undefined,
+    () => undefined
+  );
+  return next;
 }
 
 function draftPhotosDirectory(draftId: string): Directory {
@@ -192,6 +249,10 @@ export function deleteDraftPhotos(draftId: string): void {
 
 export function measuredSqft(rooms: RoomCapture[]): number {
   return rooms.reduce((sum, room) => {
+    const fromScan = room.measuredSqftFromScan;
+    if (typeof fromScan === 'number' && Number.isFinite(fromScan)) {
+      return sum + fromScan;
+    }
     const value = Number.parseFloat(room.sqft);
     return sum + (Number.isFinite(value) ? value : 0);
   }, 0);
@@ -204,4 +265,21 @@ export function totalPhotos(rooms: RoomCapture[]): number {
 export function recordedSqftValue(draft: ManualWalkthroughDraft): number | null {
   const value = Number.parseFloat(draft.recordedSqft);
   return Number.isFinite(value) ? value : null;
+}
+
+export function draftHasScanMeasure(draft: ManualWalkthroughDraft): boolean {
+  if (
+    typeof draft.measuredSqftFromScan === 'number' &&
+    Number.isFinite(draft.measuredSqftFromScan) &&
+    draft.measuredSqftFromScan > 0
+  ) {
+    return true;
+  }
+  return draft.rooms.some(
+    (room) =>
+      room.scanned === true ||
+      (typeof room.measuredSqftFromScan === 'number' &&
+        Number.isFinite(room.measuredSqftFromScan) &&
+        room.measuredSqftFromScan > 0)
+  );
 }
