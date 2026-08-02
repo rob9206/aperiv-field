@@ -173,22 +173,31 @@ export function ManualWalkthrough({
     loadDraftStore().then(
       (loaded) => {
         let next = loaded;
-        if (params.mode === 'new') {
-          next = { ...loaded, activeDraftId: null };
-          void saveDraftStore(next);
-          setScreenStep('checkin');
-        } else if (params.mode === 'resume' && params.id) {
+        const activeId = loaded.activeDraftId;
+        const active = activeId ? loaded.drafts[activeId] : null;
+        const inProgress =
+          !!active &&
+          !active.completedAt &&
+          (active.guidePhase != null ||
+            active.rooms.some((room) => room.scanned || room.photos.length > 0));
+
+        if (params.mode === 'resume' && params.id) {
           const target = loaded.drafts[params.id];
           if (target) {
             next = { ...loaded, activeDraftId: params.id };
             void saveDraftStore(next);
             setScreenStep(target.completedAt ? 'done' : 'roomGuide');
           }
-        } else if (loaded.activeDraftId) {
-          const active = loaded.drafts[loaded.activeDraftId];
-          if (active) {
-            setScreenStep(active.completedAt ? 'done' : 'roomGuide');
-          }
+        } else if (params.mode === 'new' && inProgress) {
+          // Remount after LiDAR: URL may still say mode=new — keep the job.
+          next = loaded;
+          setScreenStep('roomGuide');
+        } else if (params.mode === 'new') {
+          next = { ...loaded, activeDraftId: null };
+          void saveDraftStore(next);
+          setScreenStep('checkin');
+        } else if (active) {
+          setScreenStep(active.completedAt ? 'done' : 'roomGuide');
         }
         storeRef.current = next;
         setStore(next);
@@ -259,6 +268,7 @@ export function ManualWalkthrough({
       defaultRoomNames(locale)
     );
     persistDraft(next);
+    router.setParams({ mode: 'resume', id: next.id });
     setPropertyName('');
     setUnitNumber('');
     setRecordedSqft('');

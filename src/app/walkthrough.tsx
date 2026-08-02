@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { markActiveRoomScanned } from '@/lib/walkthrough-draft';
 import {
   RoomScanView,
   addErrorListener,
@@ -79,14 +80,18 @@ export default function WalkthroughScreen() {
 
     try {
       const results = await exportResults(scanId);
+      // Guide UI is unmounted during scan — persist progress before remount.
+      await markActiveRoomScanned();
       setScanCompletedToken((token) => token + 1);
-      setScanState({ phase: 'complete', results });
+      // Return straight to the guided job (condition prompts), not a restart.
+      enterManual(true);
+      void results;
     } catch (error) {
       setScanState({ phase: 'error', message: errorMessage(error) });
     } finally {
       exportInFlight.current = false;
     }
-  }, []);
+  }, [enterManual]);
 
   useEffect(() => {
     let isMounted = true;

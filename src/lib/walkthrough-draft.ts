@@ -205,6 +205,40 @@ export async function saveDraftStore(store: DraftStore): Promise<void> {
   return next;
 }
 
+/** Persist LiDAR success onto the active room while the guide UI is unmounted. */
+export async function markActiveRoomScanned(): Promise<DraftStore | null> {
+  const store = await loadDraftStore();
+  const activeId = store.activeDraftId;
+  if (!activeId) {
+    return null;
+  }
+  const draft = store.drafts[activeId];
+  if (!draft) {
+    return null;
+  }
+  const idx = draft.guideRoomIndex ?? 0;
+  const rooms = draft.rooms.map((room, i) =>
+    i === idx ? { ...room, scanned: true } : room
+  );
+  const measuredTotal = measuredSqft(rooms);
+  const next: DraftStore = {
+    activeDraftId: activeId,
+    drafts: {
+      ...store.drafts,
+      [activeId]: {
+        ...draft,
+        rooms,
+        measuredSqftFromScan:
+          measuredTotal > 0 ? measuredTotal : draft.measuredSqftFromScan,
+        guidePhase: 'condition',
+        completedAt: undefined,
+      },
+    },
+  };
+  await saveDraftStore(next);
+  return next;
+}
+
 function draftPhotosDirectory(draftId: string): Directory {
   return new Directory(Paths.document, PHOTOS_DIR, draftId);
 }
