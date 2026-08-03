@@ -9,8 +9,10 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v57.0.0/ before 
 - When status claims disagree with what is on device, verify the installed native binary includes the required modules—not only Metro/JS.
 - When asked for "draft text," provide short partner-ready messages with minimal process chatter.
 - For remote partner iOS installs, prefer Internal TestFlight; Ad Hoc needs UDID registration and a rebuild per new device. Expo Orbit is local-only and does not simplify remote partner installs.
-- Field UX must stay very simple for non-tech-savvy and Spanish-speaking crew: bilingual UI with English as the default (for Dawson/Kevin testing), easy switch to Spanish for crew, plain language, large touch targets, photos-first capture, and a job-list mental model—check in by unit, then guided room-by-room scan with condition/damage/photo prompts (not multi-step form wizards).
+- Field UX must stay very simple for non-tech-savvy and Spanish-speaking crew: bilingual UI with English as the default (for Dawson/Kevin testing), easy switch to Spanish for crew, plain language, large touch targets, photos-first capture, and a job-list mental model—check in by unit, then one screen per room (not a multi-step wizard).
+- Locked capture UX (Claude Design Turns 2+3): one screen per room with Scan + “Is this room ready?” (Ready / Small stuff / Needs fixing) + optional part chips (no free-text required) + photos; do not ship the six-phase arrive→scan→condition→damage→photo→advance wizard as the target.
 - Verified walkthroughs require a successful LiDAR/RoomPlan scan to confirm unit sq ft; non-LiDAR devices may only finish as Unverified (photos/notes).
+- Visual direction for Field: teal accent (#0F766E), deep slate, amber only for Unverified—not Aperiv marketing blue.
 
 ## Learned Workspace Facts
 

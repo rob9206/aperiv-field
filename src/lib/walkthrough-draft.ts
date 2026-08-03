@@ -21,7 +21,9 @@ export type RoomPhoto = {
   uri: string;
 };
 
+/** Historical wizard phases still accepted when loading old drafts. */
 export type GuidePhase =
+  | 'room'
   | 'arrive'
   | 'scan'
   | 'condition'
@@ -35,10 +37,13 @@ export type RoomCapture = {
   id: string;
   name: string;
   sqft: string;
+  /** good=Ready, watch=Small stuff, issue=Needs fixing */
   condition: RoomCondition;
   photos: RoomPhoto[];
   notes: string;
   hasDamage?: boolean;
+  /** Part chips when room is not Ready (carpet, paint, …). */
+  issueParts?: string[];
   scanned?: boolean;
   measuredSqftFromScan?: number;
 };
@@ -101,7 +106,7 @@ export function createDraft(
     findings: [],
     createdAt: new Date().toISOString(),
     guideRoomIndex: 0,
-    guidePhase: 'arrive',
+    guidePhase: 'room',
     verificationStatus: 'unverified',
   };
 }

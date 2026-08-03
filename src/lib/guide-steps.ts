@@ -1,54 +1,25 @@
-import type { GuidePhase } from '@/lib/walkthrough-draft';
+import type { RoomCapture } from '@/lib/walkthrough-draft';
 
-export type GuideStepContext = {
-  lidarAvailable: boolean;
-  roomIndex: number;
-  roomCount: number;
-  phase: GuidePhase;
-};
+export type RoomAdvanceBlock = 'ok' | 'photo' | 'scan';
 
-/** Advance guide phase after the current prompt is completed. */
-export function nextGuidePhase(
-  phase: GuidePhase,
+/** Whether the current room can advance (Next / Finish). */
+export function canAdvanceRoom(
+  room: Pick<RoomCapture, 'photos' | 'scanned'>,
   lidarAvailable: boolean
-): GuidePhase | 'doneRoom' {
-  switch (phase) {
-    case 'arrive':
-      return lidarAvailable ? 'scan' : 'condition';
-    case 'scan':
-      return 'condition';
-    case 'condition':
-      return 'damage';
-    case 'damage':
-      return 'photo';
-    case 'photo':
-      return 'advance';
-    case 'advance':
-      return 'doneRoom';
-    default:
-      return 'arrive';
-  }
+): RoomAdvanceBlock {
+  if (room.photos.length < 1) return 'photo';
+  if (lidarAvailable && !room.scanned) return 'scan';
+  return 'ok';
 }
 
-/** Step backward one prompt; `leaveRoom` means leave this room index. */
-export function previousGuidePhase(
-  phase: GuidePhase,
-  lidarAvailable: boolean
-): GuidePhase | 'leaveRoom' {
-  switch (phase) {
-    case 'arrive':
-      return 'leaveRoom';
-    case 'scan':
-      return 'arrive';
-    case 'condition':
-      return lidarAvailable ? 'scan' : 'arrive';
-    case 'damage':
-      return 'condition';
-    case 'photo':
-      return 'damage';
-    case 'advance':
-      return 'photo';
-    default:
-      return 'arrive';
-  }
-}
+export const ISSUE_PART_KEYS = [
+  'partCarpet',
+  'partPaint',
+  'partWall',
+  'partAppliance',
+  'partPlumbing',
+  'partClean',
+  'partOther',
+] as const;
+
+export type IssuePartKey = (typeof ISSUE_PART_KEYS)[number];
