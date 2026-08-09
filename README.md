@@ -4,6 +4,8 @@ Expo (React Native) app for on-site turnover walkthroughs and capture, shipped t
 
 This is the **mobile** companion to the Next.js web app in [`rob9206/aperiv`](https://github.com/rob9206/aperiv). It is a separate codebase — not a wrapper around the website.
 
+**Tester / end-user guide:** see [HOW_TO_USE.md](./HOW_TO_USE.md) (install, sign-in, room scan, share).
+
 ## Stack
 
 - Expo SDK 57 · Expo Router · TypeScript
