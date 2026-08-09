@@ -19,7 +19,7 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v57.0.0/ before 
 - This is an Expo SDK 57 CNG app (`com.aperiv.field`, EAS `@dawsondynamics/aperiv-field`); iOS builds run via EAS from Windows (no local Xcode).
 - Local module `modules/expo-room-scan` wraps Apple RoomPlan; `/walkthrough` needs a native iOS build that includes `ExpoRoomScan`—Expo Go and web always show the unsupported/placeholder path.
 - RoomPlan requires a LiDAR-capable iPhone/iPad; `isSupported()` is false on Android, web, simulators, and non-LiDAR devices. Core Field outcome is verified unit sq ft from RoomPlan vs recorded.
-- EAS `preview` is Ad Hoc; additional tester devices must be registered and the profile rebuilt, or use a store/`production` build with Internal TestFlight.
+- EAS `preview` and `internal` (PR #8 on `origin/main`) are Ad Hoc; additional tester devices must be registered and the profile rebuilt (refresh Ad Hoc provisioning when adding a UDID), or use a store/`production` build with Internal TestFlight.
 - Lockfile gotcha: local npm 11 (Windows) omits `@emnapi/core`/`@emnapi/runtime` from package-lock.json, but the EAS macOS worker's npm 10 requires them — `npm ci` fails the Install dependencies phase. They are pinned as devDependencies as the fix; do not remove them, and re-check after any lockfile regeneration.
 - Related walkthrough result UI/schema lives in GitHub `rob9206/aperiv`; Field is the mobile companion meant to write walkthrough results the web already reads—there was no prior custom Aperiv LiDAR scanner on this Windows machine (Apple RoomPlan sample + Expo/web placeholders).
 - Field's Supabase client is auth-only today; manual walkthrough drafts stay in AsyncStorage and RoomPlan exports stay local/share-sheet—inserts/uploads to `walkthroughs` (and photo storage) are not shipped yet.
@@ -48,16 +48,14 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v57.0.0/ before 
   not used for tracking. Any new SDK that collects anything else breaks this. Do not add
   analytics, crash reporting, or tracking without flagging it explicitly.
 
-## Repo state warnings — verified 2026-08-01
+## Repo history — reconciled 2026-08-09
 
-- **Local `main` is an ORPHAN HISTORY.** Root commit `db873c6` ("Created from FETCH_HEAD"),
-  3 commits total. `git merge-base` against `origin/HEAD` and every other origin ref
-  returns NO COMMON ANCESTOR. `origin/HEAD` is `d31d99c` and does not contain
-  `src/components/manual-walkthrough.tsx` at all.
-- Therefore `git push origin main` fails non-fast-forward. **Do not `git pull` and do not
-  `git push --force`** — pull merges unrelated trees, force deletes the real history
-  including PR #7. Push to a new branch to back up work.
-- Reconciling the two histories is deliberately deferred until after build 11 ships.
+- Local capture line (`db873c6`…`eda2d7d`) and `origin/main` (`87ae068`…`338dc49`) were
+  unrelated histories; they were joined with `git merge --allow-unrelated-histories`.
+- Pre-merge backups: branch `backup/pre-reconcile-main`, tags `backup/main-eda2d7d` and
+  `backup/origin-main-338dc49`.
+- Merge kept origin EAS/`expo-room-scan` linking (incl. `internal` Ad Hoc + TestFlight
+  `preview`) and local crew walkthrough UX. **Do not force-push `main`.**
 
 ## Known defects — 2026-08-01 list resolved 2026-08-02 (uncommitted work)
 

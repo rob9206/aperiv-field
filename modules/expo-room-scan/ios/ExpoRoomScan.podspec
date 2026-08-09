@@ -8,12 +8,12 @@ Pod::Spec.new do |s|
   s.platforms      = {
     :ios => '16.4'
   }
-  s.source         = { git: '' }
+  s.source         = { :path => '.' }
   s.static_framework = true
   s.swift_version = '5.9'
 
   s.dependency 'ExpoModulesCore'
-  s.frameworks = 'RoomPlan'
+  s.frameworks = 'RoomPlan', 'RealityKit', 'ARKit'
 
   # Swift/Objective-C compatibility
   s.pod_target_xcconfig = {

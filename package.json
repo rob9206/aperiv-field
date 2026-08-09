@@ -17,6 +17,7 @@
     "expo-image-picker": "~57.0.7",
     "expo-linking": "~57.0.4",
     "expo-router": "~57.0.8",
+    "expo-room-scan": "file:./modules/expo-room-scan",
     "expo-splash-screen": "~57.0.5",
     "expo-status-bar": "~57.0.1",
     "expo-symbols": "~57.0.1",
