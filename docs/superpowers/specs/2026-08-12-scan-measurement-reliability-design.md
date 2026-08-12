@@ -1,6 +1,6 @@
 # Scan Measurement Reliability Design
 
-**Status:** Approved direction, pending implementation plan
+**Status:** Approved; OTA and native implementation plans written
 
 ## Goal
 
