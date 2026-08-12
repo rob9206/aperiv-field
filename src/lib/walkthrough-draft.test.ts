@@ -6,12 +6,35 @@ import {
   parseDraftStoreRaw,
 } from './draft-store-parse.ts';
 import {
-  createDraft,
-  createRoom,
   draftCanBeVerified,
   scanMeasuredSqft,
   type RoomScanArtifact,
-} from './walkthrough-draft.ts';
+} from './walkthrough-schema.ts';
+
+const createRoom = (name: string) => ({
+  id: `room-${name}`,
+  name,
+  sqft: '',
+  condition: 'good' as const,
+  photos: [],
+  notes: '',
+  scanned: false,
+});
+
+const createDraft = (
+  property: string,
+  unit: string,
+  recordedSqft: string,
+  roomNames: string[]
+) => ({
+  id: 'draft-1',
+  property,
+  unit,
+  recordedSqft,
+  rooms: roomNames.map(createRoom),
+  findings: [],
+  createdAt: '2026-08-12T00:00:00.000Z',
+});
 
 describe('isValidDraftStore', () => {
   it('rejects drafts: null', () => {
