@@ -329,12 +329,21 @@ public final class ExpoRoomScanModule: Module {
 
   @available(iOS 16.0, *)
   private func floorAreaSquareMeters(from room: CapturedRoom) -> Double {
-    room.floors.reduce(0.0) { partial, floor in
-      partial + surfaceAreaSquareMeters(floor)
+    // floors + polygonCorners arrived in iOS 17.
+    if #available(iOS 17.0, *) {
+      let floorsArea = room.floors.reduce(0.0) { partial, floor in
+        partial + surfaceAreaSquareMeters(floor)
+      }
+      if floorsArea > 0 {
+        return floorsArea
+      }
     }
+
+    // iOS 16 / empty floors: estimate footprint from wall segments.
+    return wallFootprintAreaSquareMeters(walls: room.walls)
   }
 
-  @available(iOS 16.0, *)
+  @available(iOS 17.0, *)
   private func surfaceAreaSquareMeters(_ surface: CapturedRoom.Surface) -> Double {
     let corners = surface.polygonCorners
     if corners.count >= 3 {
@@ -357,6 +366,111 @@ public final class ExpoRoomScanModule: Module {
       return 0
     }
     return extents[0] * extents[1]
+  }
+
+  @available(iOS 16.0, *)
+  private func wallFootprintAreaSquareMeters(walls: [CapturedRoom.Surface]) -> Double {
+    var endpoints: [(x: Double, z: Double)] = []
+
+    for wall in walls {
+      let length = abs(Double(wall.dimensions.x))
+      guard length > 0.0001 else {
+        continue
+      }
+
+      let transform = wall.transform
+      let axisX = Double(transform.columns.0.x)
+      let axisZ = Double(transform.columns.0.z)
+      let centerX = Double(transform.columns.3.x)
+      let centerZ = Double(transform.columns.3.z)
+      let axisLength = max(hypot(axisX, axisZ), 0.0001)
+      let half = length / 2.0
+      let dx = (axisX / axisLength) * half
+      let dz = (axisZ / axisLength) * half
+      endpoints.append((x: centerX - dx, z: centerZ - dz))
+      endpoints.append((x: centerX + dx, z: centerZ + dz))
+    }
+
+    let hull = convexHullXZ(endpoints)
+    return xzPolygonAreaSquareMeters(hull)
+  }
+
+  private func convexHullXZ(
+    _ points: [(x: Double, z: Double)]
+  ) -> [(x: Double, z: Double)] {
+    if points.count <= 1 {
+      return points
+    }
+
+    let sorted = points.sorted { left, right in
+      if left.x != right.x {
+        return left.x < right.x
+      }
+      return left.z < right.z
+    }
+
+    var unique: [(x: Double, z: Double)] = []
+    for point in sorted {
+      if let last = unique.last,
+        abs(last.x - point.x) < 1e-6,
+        abs(last.z - point.z) < 1e-6 {
+        continue
+      }
+      unique.append(point)
+    }
+
+    if unique.count <= 2 {
+      return unique
+    }
+
+    func cross(
+      _ origin: (x: Double, z: Double),
+      _ a: (x: Double, z: Double),
+      _ b: (x: Double, z: Double)
+    ) -> Double {
+      (a.x - origin.x) * (b.z - origin.z) - (a.z - origin.z) * (b.x - origin.x)
+    }
+
+    var lower: [(x: Double, z: Double)] = []
+    for point in unique {
+      while lower.count >= 2,
+        cross(lower[lower.count - 2], lower[lower.count - 1], point) <= 0 {
+        lower.removeLast()
+      }
+      lower.append(point)
+    }
+
+    var upper: [(x: Double, z: Double)] = []
+    for point in unique.reversed() {
+      while upper.count >= 2,
+        cross(upper[upper.count - 2], upper[upper.count - 1], point) <= 0 {
+        upper.removeLast()
+      }
+      upper.append(point)
+    }
+
+    if !lower.isEmpty {
+      lower.removeLast()
+    }
+    if !upper.isEmpty {
+      upper.removeLast()
+    }
+    return lower + upper
+  }
+
+  private func xzPolygonAreaSquareMeters(
+    _ points: [(x: Double, z: Double)]
+  ) -> Double {
+    guard points.count >= 3 else {
+      return 0
+    }
+    var sum = 0.0
+    for index in points.indices {
+      let current = points[index]
+      let next = points[(index + 1) % points.count]
+      sum += current.x * next.z - next.x * current.z
+    }
+    return abs(sum) / 2.0
   }
 
   private func polygonAreaSquareMeters(_ corners: [simd_float3]) -> Double {

@@ -3,12 +3,36 @@ import { describe, it } from 'node:test';
 
 import {
   SQM_TO_SQFT,
+  convexHullXZ,
   measuredSqftFromExportFields,
   measuredSqftFromRoomPlanJson,
+  wallFootprintAreaM2,
 } from './roomplan-measure.ts';
 
+function wallTransform(centerX: number, centerZ: number, axisX: number, axisZ: number) {
+  // Column-major identity with custom X axis (length) and translation.
+  return [
+    axisX,
+    0,
+    axisZ,
+    0,
+    0,
+    1,
+    0,
+    0,
+    -axisZ,
+    0,
+    axisX,
+    0,
+    centerX,
+    0,
+    centerZ,
+    1,
+  ];
+}
+
 describe('measuredSqftFromRoomPlanJson', () => {
-  it('returns null for missing floors', () => {
+  it('returns null for missing floors and walls', () => {
     assert.equal(measuredSqftFromRoomPlanJson(null), null);
     assert.equal(measuredSqftFromRoomPlanJson({}), null);
     assert.equal(measuredSqftFromRoomPlanJson({ floors: [] }), null);
@@ -65,6 +89,49 @@ describe('measuredSqftFromRoomPlanJson', () => {
     });
     assert.ok(sqft != null);
     assert.ok(Math.abs(sqft - 6 * SQM_TO_SQFT) < 0.01);
+  });
+
+  it('falls back to wall footprint when floors are missing (iOS 16)', () => {
+    // 4m x 3m rectangle from four walls.
+    const walls = [
+      {
+        dimensions: [4, 2.4, 0],
+        transform: wallTransform(0, -1.5, 1, 0),
+      },
+      {
+        dimensions: [4, 2.4, 0],
+        transform: wallTransform(0, 1.5, 1, 0),
+      },
+      {
+        dimensions: [3, 2.4, 0],
+        transform: wallTransform(-2, 0, 0, 1),
+      },
+      {
+        dimensions: [3, 2.4, 0],
+        transform: wallTransform(2, 0, 0, 1),
+      },
+    ];
+    const sqft = measuredSqftFromRoomPlanJson({ walls });
+    assert.ok(sqft != null);
+    assert.ok(Math.abs(sqft - 12 * SQM_TO_SQFT) < 0.2);
+  });
+});
+
+describe('wallFootprintAreaM2 / convexHullXZ', () => {
+  it('builds a hull for a square', () => {
+    const hull = convexHullXZ([
+      { x: 0, z: 0 },
+      { x: 1, z: 0 },
+      { x: 1, z: 1 },
+      { x: 0, z: 1 },
+      { x: 0.5, z: 0.5 },
+    ]);
+    assert.equal(hull.length, 4);
+  });
+
+  it('returns 0 for empty walls', () => {
+    assert.equal(wallFootprintAreaM2([]), 0);
+    assert.equal(wallFootprintAreaM2(null), 0);
   });
 });
 

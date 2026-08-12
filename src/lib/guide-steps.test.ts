@@ -5,12 +5,22 @@ import { canAdvanceRoom } from './guide-steps.ts';
 
 describe('canAdvanceRoom', () => {
   it('blocks when no photos', () => {
-    assert.equal(canAdvanceRoom({ photos: [], scanned: true }, true), 'photo');
+    assert.equal(
+      canAdvanceRoom(
+        { photos: [], scanned: true, measuredSqftFromScan: 120 },
+        true
+      ),
+      'photo'
+    );
   });
 
-  it('blocks LiDAR path until scanned', () => {
+  it('blocks LiDAR path until scanned with measure', () => {
     assert.equal(
       canAdvanceRoom({ photos: [{ id: '1', uri: 'x' }], scanned: false }, true),
+      'scan'
+    );
+    assert.equal(
+      canAdvanceRoom({ photos: [{ id: '1', uri: 'x' }], scanned: true }, true),
       'scan'
     );
   });
@@ -22,9 +32,16 @@ describe('canAdvanceRoom', () => {
     );
   });
 
-  it('allows LiDAR after scan + photo', () => {
+  it('allows LiDAR after scan measure + photo', () => {
     assert.equal(
-      canAdvanceRoom({ photos: [{ id: '1', uri: 'x' }], scanned: true }, true),
+      canAdvanceRoom(
+        {
+          photos: [{ id: '1', uri: 'x' }],
+          scanned: true,
+          measuredSqftFromScan: 140,
+        },
+        true
+      ),
       'ok'
     );
   });

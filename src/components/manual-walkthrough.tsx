@@ -47,6 +47,8 @@ type ManualWalkthroughProps = {
   lidarAvailable?: boolean;
   /** When parent finishes a RoomPlan session, mark current room scanned. */
   scanCompletedToken?: number;
+  /** Store already updated with scan measure — prefer over a disk reload. */
+  scanResultStore?: DraftStore | null;
 };
 
 const CONDITIONS: RoomCondition[] = ['good', 'watch', 'issue'];
@@ -127,6 +129,7 @@ export function ManualWalkthrough({
   onOpenLidar,
   lidarAvailable = false,
   scanCompletedToken = 0,
+  scanResultStore = null,
 }: ManualWalkthroughProps) {
   const theme = useTheme();
   const { t, locale } = useLocale();
@@ -220,21 +223,31 @@ export function ManualWalkthrough({
     });
   };
 
-  const persistDraft = (next: ManualWalkthroughDraft) => {
-    setStore((current) => {
-      if (!current) {
-        return current;
-      }
-      const updated: DraftStore = {
-        activeDraftId: next.id,
-        drafts: { ...current.drafts, [next.id]: next },
-      };
-      void saveDraftStore(updated).catch(() => {
-        setHydrateError(t('saveFailed'));
-      });
-      return updated;
-    });
+  const persistDraft = (
+    next: ManualWalkthroughDraft
+  ): Promise<DraftStore | null> => {
     setSavedMessage(null);
+    return new Promise((resolve) => {
+      setStore((current) => {
+        if (!current) {
+          resolve(null);
+          return current;
+        }
+        const updated: DraftStore = {
+          activeDraftId: next.id,
+          drafts: { ...current.drafts, [next.id]: next },
+        };
+        storeRef.current = updated;
+        void saveDraftStore(updated).then(
+          () => resolve(updated),
+          () => {
+            setHydrateError(t('saveFailed'));
+            resolve(null);
+          }
+        );
+        return updated;
+      });
+    });
   };
 
   const updateGuide = (
@@ -273,12 +286,17 @@ export function ManualWalkthrough({
       recordedSqft,
       defaultRoomNames(locale)
     );
-    persistDraft(next);
-    router.setParams({ mode: 'resume', id: next.id });
-    setPropertyName('');
-    setUnitNumber('');
-    setRecordedSqft('');
-    setScreenStep('roomGuide');
+    // Await disk write so a fast Scan tap cannot race an empty activeDraftId.
+    void persistDraft(next).then((saved) => {
+      if (!saved) {
+        return;
+      }
+      router.setParams({ mode: 'resume', id: next.id });
+      setPropertyName('');
+      setUnitNumber('');
+      setRecordedSqft('');
+      setScreenStep('roomGuide');
+    });
   };
 
   useEffect(() => {
@@ -287,8 +305,18 @@ export function ManualWalkthrough({
     }
     lastScanToken.current = scanCompletedToken;
 
-    // Parent already persisted scan + measured sq ft while this UI was unmounted.
-    // Reload from storage so we pick up measuredSqftFromScan, not a stale in-memory copy.
+    // Prefer the in-memory store the parent just wrote (has measured sq ft).
+    if (scanResultStore) {
+      storeRef.current = scanResultStore;
+      setStore(scanResultStore);
+      const activeId = scanResultStore.activeDraftId;
+      const active = activeId ? scanResultStore.drafts[activeId] : null;
+      if (active && !active.completedAt) {
+        setScreenStep('roomGuide');
+      }
+      return;
+    }
+
     let cancelled = false;
     void loadDraftStore().then((loaded) => {
       if (cancelled) {
@@ -306,7 +334,7 @@ export function ManualWalkthrough({
     return () => {
       cancelled = true;
     };
-  }, [scanCompletedToken]);
+  }, [scanCompletedToken, scanResultStore]);
 
   const addPhoto = async (source: 'camera' | 'library') => {
     if (!storeRef.current?.activeDraftId) {
@@ -347,20 +375,33 @@ export function ManualWalkthrough({
       if (!currentRoom) {
         return;
       }
-      const added = result.assets.map((asset) =>
-        persistPhoto(active.id, asset.uri)
-      );
+      const added: ReturnType<typeof persistPhoto>[] = [];
+      let failed = 0;
+      for (const asset of result.assets) {
+        try {
+          added.push(persistPhoto(active.id, asset.uri));
+        } catch {
+          failed += 1;
+        }
+      }
+      if (added.length === 0) {
+        setPhotoError(t('photoFailed'));
+        return;
+      }
       const rooms = active.rooms.map((item, i) =>
         i === idx
           ? { ...item, photos: [...item.photos, ...added] }
           : item
       );
-      persistDraft({
+      void persistDraft({
         ...active,
         rooms,
         completedAt: undefined,
         guidePhase: 'room',
       });
+      if (failed > 0) {
+        setPhotoError(t('photoFailed'));
+      }
     } catch {
       setPhotoError(t('photoFailed'));
     }

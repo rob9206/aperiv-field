@@ -4,11 +4,15 @@ export const SQM_TO_SQFT = 10.76391041671;
 type RoomPlanSurface = {
   dimensions?: unknown;
   polygonCorners?: unknown;
+  transform?: unknown;
 };
 
 type RoomPlanJson = {
   floors?: unknown;
+  walls?: unknown;
 };
+
+type XZPoint = { x: number; z: number };
 
 function asNumberArray(value: unknown): number[] | null {
   if (!Array.isArray(value)) {
@@ -63,6 +67,86 @@ function polygonAreaM2(corners: number[][]): number {
   return bestArea;
 }
 
+function xzPolygonAreaM2(points: XZPoint[]): number {
+  if (points.length < 3) {
+    return 0;
+  }
+  let sum = 0;
+  for (let i = 0; i < points.length; i += 1) {
+    const current = points[i];
+    const next = points[(i + 1) % points.length];
+    sum += current.x * next.z - next.x * current.z;
+  }
+  return Math.abs(sum) / 2;
+}
+
+/** Monotone-chain convex hull on the XZ plane. */
+export function convexHullXZ(points: XZPoint[]): XZPoint[] {
+  if (points.length <= 1) {
+    return points.slice();
+  }
+
+  const sorted = points
+    .map((point, index) => ({ point, index }))
+    .sort((left, right) => {
+      if (left.point.x !== right.point.x) {
+        return left.point.x - right.point.x;
+      }
+      if (left.point.z !== right.point.z) {
+        return left.point.z - right.point.z;
+      }
+      return left.index - right.index;
+    })
+    .map((entry) => entry.point);
+
+  const unique: XZPoint[] = [];
+  for (const point of sorted) {
+    const last = unique[unique.length - 1];
+    if (
+      last &&
+      Math.abs(last.x - point.x) < 1e-6 &&
+      Math.abs(last.z - point.z) < 1e-6
+    ) {
+      continue;
+    }
+    unique.push(point);
+  }
+
+  if (unique.length <= 2) {
+    return unique;
+  }
+
+  const cross = (origin: XZPoint, a: XZPoint, b: XZPoint) =>
+    (a.x - origin.x) * (b.z - origin.z) - (a.z - origin.z) * (b.x - origin.x);
+
+  const lower: XZPoint[] = [];
+  for (const point of unique) {
+    while (
+      lower.length >= 2 &&
+      cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0
+    ) {
+      lower.pop();
+    }
+    lower.push(point);
+  }
+
+  const upper: XZPoint[] = [];
+  for (let i = unique.length - 1; i >= 0; i -= 1) {
+    const point = unique[i];
+    while (
+      upper.length >= 2 &&
+      cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0
+    ) {
+      upper.pop();
+    }
+    upper.push(point);
+  }
+
+  lower.pop();
+  upper.pop();
+  return lower.concat(upper);
+}
+
 /** Bounding-box area from RoomPlan surface dimensions (meters). */
 function dimensionsAreaM2(dimensions: number[]): number {
   const positive = dimensions
@@ -92,24 +176,74 @@ function floorAreaM2(surface: RoomPlanSurface): number {
 }
 
 /**
+ * Estimate floor area from wall segments (iOS 16 RoomPlan has walls but no floors).
+ * Uses wall length + transform to collect floor-plane endpoints, then convex hull.
+ */
+export function wallFootprintAreaM2(walls: unknown): number {
+  if (!Array.isArray(walls) || walls.length === 0) {
+    return 0;
+  }
+
+  const endpoints: XZPoint[] = [];
+  for (const wall of walls) {
+    if (!wall || typeof wall !== 'object') {
+      continue;
+    }
+    const surface = wall as RoomPlanSurface;
+    const dimensions = asNumberArray(surface.dimensions);
+    const transform = asNumberArray(surface.transform);
+    if (!dimensions || !transform || transform.length < 16) {
+      continue;
+    }
+
+    const length = Math.abs(dimensions[0] ?? 0);
+    if (!(length > 1e-4)) {
+      continue;
+    }
+
+    // Column-major 4x4: X axis = length direction, translation = center.
+    const axisX = transform[0];
+    const axisZ = transform[2];
+    const centerX = transform[12];
+    const centerZ = transform[14];
+    const axisLength = Math.hypot(axisX, axisZ) || 1;
+    const half = length / 2;
+    const dx = (axisX / axisLength) * half;
+    const dz = (axisZ / axisLength) * half;
+    endpoints.push({ x: centerX - dx, z: centerZ - dz });
+    endpoints.push({ x: centerX + dx, z: centerZ + dz });
+  }
+
+  return xzPolygonAreaM2(convexHullXZ(endpoints));
+}
+
+function sumSurfaceAreasM2(surfaces: unknown): number {
+  if (!Array.isArray(surfaces) || surfaces.length === 0) {
+    return 0;
+  }
+  let squareMeters = 0;
+  for (const surface of surfaces) {
+    if (!surface || typeof surface !== 'object') {
+      continue;
+    }
+    squareMeters += floorAreaM2(surface as RoomPlanSurface);
+  }
+  return squareMeters;
+}
+
+/**
  * Total floor area in square feet from a RoomPlan `CapturedRoom` JSON payload.
- * Returns null when floors are missing or area cannot be derived.
+ * Prefers floors (iOS 17+); falls back to wall-footprint estimate.
  */
 export function measuredSqftFromRoomPlanJson(json: unknown): number | null {
   if (!json || typeof json !== 'object') {
     return null;
   }
-  const floors = (json as RoomPlanJson).floors;
-  if (!Array.isArray(floors) || floors.length === 0) {
-    return null;
-  }
+  const payload = json as RoomPlanJson;
 
-  let squareMeters = 0;
-  for (const floor of floors) {
-    if (!floor || typeof floor !== 'object') {
-      continue;
-    }
-    squareMeters += floorAreaM2(floor as RoomPlanSurface);
+  let squareMeters = sumSurfaceAreasM2(payload.floors);
+  if (!(squareMeters > 0)) {
+    squareMeters = wallFootprintAreaM2(payload.walls);
   }
 
   if (!(squareMeters > 0) || !Number.isFinite(squareMeters)) {

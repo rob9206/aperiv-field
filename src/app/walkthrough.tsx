@@ -9,7 +9,10 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { readMeasuredSqftFromExport } from '@/lib/read-roomplan-measure';
-import { markActiveRoomScanned } from '@/lib/walkthrough-draft';
+import {
+  markActiveRoomScanned,
+  type DraftStore,
+} from '@/lib/walkthrough-draft';
 import {
   RoomScanView,
   addErrorListener,
@@ -45,6 +48,7 @@ export default function WalkthroughScreen() {
   const theme = useTheme();
   const [scanState, setScanState] = useState<ScanState>({ phase: 'checking' });
   const [scanCompletedToken, setScanCompletedToken] = useState(0);
+  const [scanResultStore, setScanResultStore] = useState<DraftStore | null>(null);
   const activeScanId = useRef<string | null>(null);
   const startRequested = useRef(false);
   const stopRequested = useRef(false);
@@ -82,8 +86,25 @@ export default function WalkthroughScreen() {
     try {
       const results = await exportResults(scanId);
       const measuredSqftFromScan = await readMeasuredSqftFromExport(results);
+      if (measuredSqftFromScan == null) {
+        setScanState({
+          phase: 'error',
+          message:
+            'Scan saved, but sq ft could not be read. Scan the room again.',
+        });
+        return;
+      }
       // Guide UI is unmounted during scan — persist progress before remount.
-      await markActiveRoomScanned({ measuredSqftFromScan });
+      const nextStore = await markActiveRoomScanned({ measuredSqftFromScan });
+      if (!nextStore) {
+        setScanState({
+          phase: 'error',
+          message:
+            'Could not save the scan to this job. Go back and start the job again.',
+        });
+        return;
+      }
+      setScanResultStore(nextStore);
       setScanCompletedToken((token) => token + 1);
       // Return straight to the guided job (condition prompts), not a restart.
       enterManual(true);
@@ -289,6 +310,7 @@ export default function WalkthroughScreen() {
             <ManualWalkthrough
               lidarAvailable={scanState.lidarAvailable}
               scanCompletedToken={scanCompletedToken}
+              scanResultStore={scanResultStore}
               onOpenLidar={
                 scanState.lidarAvailable
                   ? () => setScanState({ phase: 'ready' })

@@ -210,57 +210,80 @@ export async function saveDraftStore(store: DraftStore): Promise<void> {
   return next;
 }
 
+/**
+ * Serialize read-modify-write updates so a late full-blob save cannot clobber
+ * a concurrent scan/photo mutation.
+ */
+export async function updateDraftStore(
+  updater: (store: DraftStore) => DraftStore | null
+): Promise<DraftStore | null> {
+  let result: DraftStore | null = null;
+  const run = async () => {
+    const current = await loadDraftStore();
+    const next = updater(current);
+    result = next;
+    if (next) {
+      await AsyncStorage.setItem(STORE_KEY, JSON.stringify(next));
+    }
+  };
+  const queued = saveChain.then(run, run);
+  saveChain = queued.then(
+    () => undefined,
+    () => undefined
+  );
+  await queued;
+  return result;
+}
+
 export type MarkRoomScannedOptions = {
-  /** Floor area from RoomPlan in square feet for the active room. */
-  measuredSqftFromScan?: number | null;
+  /** Floor area from RoomPlan in square feet for the active room. Required. */
+  measuredSqftFromScan: number;
 };
 
 /** Persist LiDAR success onto the active room while the guide UI is unmounted. */
 export async function markActiveRoomScanned(
-  options: MarkRoomScannedOptions = {}
+  options: MarkRoomScannedOptions
 ): Promise<DraftStore | null> {
-  const store = await loadDraftStore();
-  const activeId = store.activeDraftId;
-  if (!activeId) {
-    return null;
-  }
-  const draft = store.drafts[activeId];
-  if (!draft) {
-    return null;
-  }
-  const idx = draft.guideRoomIndex ?? 0;
   const roomMeasure = options.measuredSqftFromScan;
-  const hasRoomMeasure =
-    typeof roomMeasure === 'number' &&
-    Number.isFinite(roomMeasure) &&
-    roomMeasure > 0;
+  if (!(typeof roomMeasure === 'number' && Number.isFinite(roomMeasure) && roomMeasure > 0)) {
+    return null;
+  }
 
-  const rooms = draft.rooms.map((room, i) =>
-    i === idx
-      ? {
-          ...room,
-          scanned: true,
-          ...(hasRoomMeasure ? { measuredSqftFromScan: roomMeasure } : null),
-        }
-      : room
-  );
-  const measuredTotal = measuredSqft(rooms);
-  const next: DraftStore = {
-    activeDraftId: activeId,
-    drafts: {
-      ...store.drafts,
-      [activeId]: {
-        ...draft,
-        rooms,
-        measuredSqftFromScan:
-          measuredTotal > 0 ? measuredTotal : draft.measuredSqftFromScan,
-        guidePhase: 'condition',
-        completedAt: undefined,
+  return updateDraftStore((store) => {
+    const activeId = store.activeDraftId;
+    if (!activeId) {
+      return null;
+    }
+    const draft = store.drafts[activeId];
+    if (!draft) {
+      return null;
+    }
+    const idx = draft.guideRoomIndex ?? 0;
+    const rooms = draft.rooms.map((room, i) =>
+      i === idx
+        ? {
+            ...room,
+            scanned: true,
+            measuredSqftFromScan: roomMeasure,
+          }
+        : room
+    );
+    const measuredTotal = measuredSqft(rooms);
+    return {
+      activeDraftId: activeId,
+      drafts: {
+        ...store.drafts,
+        [activeId]: {
+          ...draft,
+          rooms,
+          measuredSqftFromScan:
+            measuredTotal > 0 ? measuredTotal : draft.measuredSqftFromScan,
+          guidePhase: 'condition',
+          completedAt: undefined,
+        },
       },
-    },
-  };
-  await saveDraftStore(next);
-  return next;
+    };
+  });
 }
 
 function draftPhotosDirectory(draftId: string): Directory {
