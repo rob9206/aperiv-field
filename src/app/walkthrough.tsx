@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { readMeasuredSqftFromExport } from '@/lib/read-roomplan-measure';
 import { markActiveRoomScanned } from '@/lib/walkthrough-draft';
 import {
   RoomScanView,
@@ -80,12 +81,12 @@ export default function WalkthroughScreen() {
 
     try {
       const results = await exportResults(scanId);
+      const measuredSqftFromScan = await readMeasuredSqftFromExport(results);
       // Guide UI is unmounted during scan — persist progress before remount.
-      await markActiveRoomScanned();
+      await markActiveRoomScanned({ measuredSqftFromScan });
       setScanCompletedToken((token) => token + 1);
       // Return straight to the guided job (condition prompts), not a restart.
       enterManual(true);
-      void results;
     } catch (error) {
       setScanState({ phase: 'error', message: errorMessage(error) });
     } finally {

@@ -286,35 +286,26 @@ export function ManualWalkthrough({
       return;
     }
     lastScanToken.current = scanCompletedToken;
-    const current = storeRef.current;
-    const activeId = current?.activeDraftId;
-    const active = current && activeId ? current.drafts[activeId] : null;
-    if (!current || !active) {
-      return;
-    }
-    const idx = active.guideRoomIndex ?? 0;
-    const rooms = active.rooms.map((item, i) =>
-      i === idx ? { ...item, scanned: true } : item
-    );
-    const measuredTotal = measuredSqft(rooms);
-    const updated: DraftStore = {
-      activeDraftId: active.id,
-      drafts: {
-        ...current.drafts,
-        [active.id]: {
-          ...active,
-          rooms,
-          measuredSqftFromScan:
-            measuredTotal > 0 ? measuredTotal : active.measuredSqftFromScan,
-          guidePhase: 'room',
-          completedAt: undefined,
-        },
-      },
+
+    // Parent already persisted scan + measured sq ft while this UI was unmounted.
+    // Reload from storage so we pick up measuredSqftFromScan, not a stale in-memory copy.
+    let cancelled = false;
+    void loadDraftStore().then((loaded) => {
+      if (cancelled) {
+        return;
+      }
+      storeRef.current = loaded;
+      setStore(loaded);
+      const activeId = loaded.activeDraftId;
+      const active = activeId ? loaded.drafts[activeId] : null;
+      if (active && !active.completedAt) {
+        setScreenStep('roomGuide');
+      }
+    });
+
+    return () => {
+      cancelled = true;
     };
-    storeRef.current = updated;
-    setStore(updated);
-    void saveDraftStore(updated);
-    setScreenStep('roomGuide');
   }, [scanCompletedToken]);
 
   const addPhoto = async (source: 'camera' | 'library') => {
@@ -512,10 +503,6 @@ export function ManualWalkthrough({
     setScreenStep('done');
   };
 
-  const scannedCount = draft
-    ? draft.rooms.filter((item) => item.scanned).length
-    : 0;
-
   const showGuideBack =
     screenStep === 'roomGuide' ||
     (screenStep === 'done' && draft && !draft.completedAt);
@@ -663,7 +650,7 @@ export function ManualWalkthrough({
                     <ThemedText type="default" style={styles.scanDoneLabel}>
                       ✓{' '}
                       {room.measuredSqftFromScan
-                        ? `${Math.round(room.measuredSqftFromScan)}`
+                        ? `${Math.round(room.measuredSqftFromScan)} ${t('sqftUnit')}`
                         : t('roomsScanned')}
                     </ThemedText>
                     <Pressable
@@ -938,14 +925,12 @@ export function ManualWalkthrough({
                   </ThemedText>
                   <ThemedText type="heading" style={styles.measureLine}>
                     {measured > 0
-                      ? Math.round(measured)
-                      : scannedCount > 0
-                        ? `${scannedCount}`
-                        : '—'}
+                      ? `${Math.round(measured)} ${t('sqftUnit')}`
+                      : '—'}
                   </ThemedText>
                 </View>
               </View>
-              {measured === 0 && scannedCount === 0 ? (
+              {measured === 0 ? (
                 <ThemedText type="default" themeColor="textSecondary">
                   {t('measuredPending')}
                 </ThemedText>

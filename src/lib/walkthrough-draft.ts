@@ -210,8 +210,15 @@ export async function saveDraftStore(store: DraftStore): Promise<void> {
   return next;
 }
 
+export type MarkRoomScannedOptions = {
+  /** Floor area from RoomPlan in square feet for the active room. */
+  measuredSqftFromScan?: number | null;
+};
+
 /** Persist LiDAR success onto the active room while the guide UI is unmounted. */
-export async function markActiveRoomScanned(): Promise<DraftStore | null> {
+export async function markActiveRoomScanned(
+  options: MarkRoomScannedOptions = {}
+): Promise<DraftStore | null> {
   const store = await loadDraftStore();
   const activeId = store.activeDraftId;
   if (!activeId) {
@@ -222,8 +229,20 @@ export async function markActiveRoomScanned(): Promise<DraftStore | null> {
     return null;
   }
   const idx = draft.guideRoomIndex ?? 0;
+  const roomMeasure = options.measuredSqftFromScan;
+  const hasRoomMeasure =
+    typeof roomMeasure === 'number' &&
+    Number.isFinite(roomMeasure) &&
+    roomMeasure > 0;
+
   const rooms = draft.rooms.map((room, i) =>
-    i === idx ? { ...room, scanned: true } : room
+    i === idx
+      ? {
+          ...room,
+          scanned: true,
+          ...(hasRoomMeasure ? { measuredSqftFromScan: roomMeasure } : null),
+        }
+      : room
   );
   const measuredTotal = measuredSqft(rooms);
   const next: DraftStore = {
@@ -316,9 +335,8 @@ export function draftHasScanMeasure(draft: ManualWalkthroughDraft): boolean {
   }
   return draft.rooms.some(
     (room) =>
-      room.scanned === true ||
-      (typeof room.measuredSqftFromScan === 'number' &&
-        Number.isFinite(room.measuredSqftFromScan) &&
-        room.measuredSqftFromScan > 0)
+      typeof room.measuredSqftFromScan === 'number' &&
+      Number.isFinite(room.measuredSqftFromScan) &&
+      room.measuredSqftFromScan > 0
   );
 }

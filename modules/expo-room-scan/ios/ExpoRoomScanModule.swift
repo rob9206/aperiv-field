@@ -6,6 +6,7 @@ import UIKit
 
 #if os(iOS) && canImport(RoomPlan)
 import RoomPlan
+import simd
 #endif
 
 public final class ExpoRoomScanModule: Module {
@@ -305,10 +306,17 @@ public final class ExpoRoomScanModule: Module {
         throw RoomScanIncompleteExportException()
       }
 
-      return [
+      let areaSquareMeters = floorAreaSquareMeters(from: finalResults)
+      let areaSquareFeet = areaSquareMeters * 10.76391041671
+      var payload: [String: String] = [
         "usdzPath": usdzURL.path,
         "jsonPath": jsonURL.path
       ]
+      if areaSquareMeters > 0 {
+        payload["areaSquareMeters"] = String(areaSquareMeters)
+        payload["areaSquareFeet"] = String(areaSquareFeet)
+      }
+      return payload
     } catch {
       try? fileManager.removeItem(at: scanDirectoryURL)
 
@@ -316,6 +324,70 @@ public final class ExpoRoomScanModule: Module {
         throw exception
       }
       throw RoomScanExportException(error.localizedDescription)
+    }
+  }
+
+  @available(iOS 16.0, *)
+  private func floorAreaSquareMeters(from room: CapturedRoom) -> Double {
+    room.floors.reduce(0.0) { partial, floor in
+      partial + surfaceAreaSquareMeters(floor)
+    }
+  }
+
+  @available(iOS 16.0, *)
+  private func surfaceAreaSquareMeters(_ surface: CapturedRoom.Surface) -> Double {
+    let corners = surface.polygonCorners
+    if corners.count >= 3 {
+      let polygonArea = polygonAreaSquareMeters(corners)
+      if polygonArea > 0 {
+        return polygonArea
+      }
+    }
+
+    // RoomPlan dimensions are meters; use the two largest extents for area.
+    let extents = [
+      abs(Double(surface.dimensions.x)),
+      abs(Double(surface.dimensions.y)),
+      abs(Double(surface.dimensions.z))
+    ]
+    .filter { $0 > 0.0001 }
+    .sorted(by: >)
+
+    guard extents.count >= 2 else {
+      return 0
+    }
+    return extents[0] * extents[1]
+  }
+
+  private func polygonAreaSquareMeters(_ corners: [simd_float3]) -> Double {
+    let axisPairs: [(Int, Int)] = [(0, 1), (0, 2), (1, 2)]
+    var bestArea = 0.0
+
+    for (firstAxis, secondAxis) in axisPairs {
+      var sum = 0.0
+      for index in corners.indices {
+        let current = corners[index]
+        let next = corners[(index + 1) % corners.count]
+        let currentA = Double(axisValue(current, axis: firstAxis))
+        let currentB = Double(axisValue(current, axis: secondAxis))
+        let nextA = Double(axisValue(next, axis: firstAxis))
+        let nextB = Double(axisValue(next, axis: secondAxis))
+        sum += currentA * nextB - nextA * currentB
+      }
+      let area = abs(sum) / 2.0
+      if area > bestArea {
+        bestArea = area
+      }
+    }
+
+    return bestArea
+  }
+
+  private func axisValue(_ point: simd_float3, axis: Int) -> Float {
+    switch axis {
+    case 0: return point.x
+    case 1: return point.y
+    default: return point.z
     }
   }
 

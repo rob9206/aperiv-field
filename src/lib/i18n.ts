@@ -102,6 +102,7 @@ const en = {
   measuredPending: 'Measured sq ft after export',
   roomsScanned: 'Rooms scanned',
   photosTaken: 'taken',
+  sqftUnit: 'sq ft',
 } as const;
 
 const es: { [K in keyof typeof en]: string } = {
@@ -207,6 +208,7 @@ const es: { [K in keyof typeof en]: string } = {
   measuredPending: 'Pies² medidos tras exportar',
   roomsScanned: 'Habitaciones escaneadas',
   photosTaken: 'tomadas',
+  sqftUnit: 'pies²',
 };
 
 export type TranslationKey = keyof typeof en;
