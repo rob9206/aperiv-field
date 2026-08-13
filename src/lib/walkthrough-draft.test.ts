@@ -84,6 +84,11 @@ describe('parseDraftStoreRaw', () => {
     };
     assert.deepEqual(parseDraftStoreRaw(JSON.stringify(store)), store);
   });
+
+  it('keeps stores with a missing active draft ID recoverable', () => {
+    const store = { drafts: {} };
+    assert.deepEqual(parseDraftStoreRaw(JSON.stringify(store)), store);
+  });
 });
 
 describe('scan verification', () => {
