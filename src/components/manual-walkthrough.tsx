@@ -156,7 +156,10 @@ export function ManualWalkthrough({
   const [hydrateError, setHydrateError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
-  const [shareError, setShareError] = useState<string | null>(null);
+  const [shareFailure, setShareFailure] = useState<{
+    context: string;
+    message: string;
+  } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   const [propertyName, setPropertyName] = useState('');
@@ -170,6 +173,9 @@ export function ManualWalkthrough({
 
   const roomIndex = draft?.guideRoomIndex ?? 0;
   const room = draft?.rooms[roomIndex] ?? null;
+  const shareContext = `${draft?.id ?? ''}:${room?.id ?? ''}:${screenStep}`;
+  const shareError =
+    shareFailure?.context === shareContext ? shareFailure.message : null;
   const nextRoom = draft?.rooms[roomIndex + 1] ?? null;
   const roomVerified = room ? roomHasVerifiedScan(room) : false;
   const previousRoomMeasurement =
@@ -277,10 +283,6 @@ export function ManualWalkthrough({
   useEffect(() => {
     storeRef.current = store;
   }, [store]);
-
-  useEffect(() => {
-    setShareError(null);
-  }, [draft?.id, room?.id, screenStep]);
 
   const applyCommittedStore = (next: DraftStore) => {
     storeRef.current = next;
@@ -624,11 +626,14 @@ export function ManualWalkthrough({
     if (!onShareScan) {
       return;
     }
-    setShareError(null);
+    setShareFailure(null);
     try {
       await onShareScan(artifact);
     } catch {
-      setShareError(t('shareScanFailed'));
+      setShareFailure({
+        context: shareContext,
+        message: t('shareScanFailed'),
+      });
     }
   };
 
