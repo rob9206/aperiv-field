@@ -1,5 +1,5 @@
 export type DraftStoreShape = {
-  activeDraftId: string | null;
+  activeDraftId?: string | null;
   drafts: Record<string, unknown>;
 };
 
@@ -13,7 +13,7 @@ export function isValidDraftStore(value: unknown): value is DraftStoreShape {
     return false;
   }
   const active = record.activeDraftId;
-  if (active !== null && typeof active !== 'string') {
+  if (active !== undefined && active !== null && typeof active !== 'string') {
     return false;
   }
   return true;

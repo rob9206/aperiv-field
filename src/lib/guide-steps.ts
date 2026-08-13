@@ -1,14 +1,15 @@
 import type { RoomCapture } from '@/lib/walkthrough-draft';
+import { roomHasVerifiedScan } from './walkthrough-schema.ts';
 
 export type RoomAdvanceBlock = 'ok' | 'photo' | 'scan';
 
 /** Whether the current room can advance (Next / Finish). */
 export function canAdvanceRoom(
-  room: Pick<RoomCapture, 'photos' | 'scanned'>,
-  lidarAvailable: boolean
+  room: Pick<RoomCapture, 'photos' | 'scanArtifact' | 'skipped'>,
+  lidarRequired: boolean
 ): RoomAdvanceBlock {
   if (room.photos.length < 1) return 'photo';
-  if (lidarAvailable && !room.scanned) return 'scan';
+  if (lidarRequired && !roomHasVerifiedScan(room)) return 'scan';
   return 'ok';
 }
 
