@@ -107,7 +107,7 @@ describe('normalizeDraftStore', () => {
   });
 
   it('drops malformed drafts while retaining valid siblings', () => {
-    const invalidValues: Array<(value: ReturnType<typeof draft>) => void> = [
+    const invalidValues: ((value: ReturnType<typeof draft>) => void)[] = [
       (value) => {
         value.createdAt = 'not-a-date';
       },
