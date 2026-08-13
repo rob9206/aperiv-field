@@ -29,6 +29,8 @@ describe('t', () => {
     assert.equal(t('es', 'scanMeasureFailed').includes('pies²'), true);
     assert.equal(t('en', 'continueUnverified'), 'Continue unverified');
     assert.equal(t('es', 'continueUnverified'), 'Continuar sin verificar');
+    assert.equal(t('en', 'shareScanFailed').includes('share'), true);
+    assert.equal(t('es', 'shareScanFailed').includes('compartir'), true);
   });
 
   it('never exposes jargon in crew strings', () => {

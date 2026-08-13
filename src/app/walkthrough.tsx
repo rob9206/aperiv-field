@@ -11,7 +11,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { captureFileLifecycle } from '@/lib/capture-files.native';
+import { captureFileLifecycle } from '@/lib/capture-files-runtime';
 import { readVerifiedMeasurementFromExport } from '@/lib/read-roomplan-measure';
 import type { TranslationKey } from '@/lib/i18n';
 import type { RoomScanArtifact } from '@/lib/walkthrough-draft';
@@ -57,6 +57,7 @@ export default function WalkthroughScreen() {
   const theme = useTheme();
   const { t } = useLocale();
   const [scanState, setScanState] = useState<ScanState>({ phase: 'checking' });
+  const [draftSaveInFlight, setDraftSaveInFlight] = useState(false);
   const activeScan = useRef<ActiveScan | null>(null);
   const manualUnverified = useRef(false);
   const startRequested = useRef(false);
@@ -358,7 +359,13 @@ export default function WalkthroughScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ gestureEnabled: true, headerShown: true }} />
+      <Stack.Screen
+        options={{
+          gestureEnabled: !draftSaveInFlight,
+          headerBackVisible: !draftSaveInFlight,
+          headerShown: true,
+        }}
+      />
       <ThemedView style={styles.container}>
         <SafeAreaView style={styles.safeArea} edges={['bottom', 'left', 'right']}>
           {scanState.phase === 'checking' && (
@@ -375,6 +382,7 @@ export default function WalkthroughScreen() {
               lidarAvailable={scanState.lidarAvailable}
               manualUnverified={scanState.manualUnverified}
               onStartAnother={resetManualUnverified}
+              onSavingChange={setDraftSaveInFlight}
               onShareScan={(artifact) =>
                 share([artifact.jsonPath, artifact.usdzPath])
               }

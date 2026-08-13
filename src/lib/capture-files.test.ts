@@ -461,6 +461,39 @@ describe('transactional draft and scan lifecycle', () => {
     ]);
   });
 
+  it('cleans newly exported paths when scan persistence throws', async () => {
+    const current = draft();
+    let failNextWrite = true;
+    const events: string[] = [];
+    const lifecycle = createCaptureFileLifecycle(
+      createDraftStoreRepository(
+        memoryStorage(store(current), {
+          beforeSet() {
+            if (failNextWrite) {
+              failNextWrite = false;
+              throw new Error('disk full');
+            }
+          },
+        })
+      ),
+      createCaptureFileService(fakeAdapter({ events }))
+    );
+
+    await assert.rejects(
+      lifecycle.commitRoomScan({
+        draftId: current.id,
+        roomId: 'living',
+        artifact: artifact('new'),
+      }),
+      /disk full/
+    );
+
+    assert.deepEqual(events, [
+      'delete-file:/documents/scans/new/Room.json',
+      'delete-file:/documents/scans/new/Room.usdz',
+    ]);
+  });
+
   it('plans parse and route-unmount export cleanup from committed truth', async () => {
     const current = draft();
     current.rooms[0].scanArtifact = artifact('live');

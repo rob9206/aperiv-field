@@ -30,7 +30,7 @@ import {
   mutateDraftById,
   mutateDraftStore,
 } from '@/lib/draft-store';
-import { captureFileLifecycle } from '@/lib/capture-files.native';
+import { captureFileLifecycle } from '@/lib/capture-files-runtime';
 import {
   createDraft,
   createRoom,
@@ -58,6 +58,7 @@ export type ScanTarget = {
 type ManualWalkthroughProps = {
   onOpenLidar?: (target: ScanTarget) => void;
   onShareScan?: (artifact: RoomScanArtifact) => Promise<void>;
+  onSavingChange?: (isSaving: boolean) => void;
   lidarAvailable?: boolean;
   manualUnverified?: boolean;
   onStartAnother?: () => void;
@@ -140,6 +141,7 @@ function RoomSegments({
 export function ManualWalkthrough({
   onOpenLidar,
   onShareScan,
+  onSavingChange,
   lidarAvailable = false,
   manualUnverified = false,
   onStartAnother,
@@ -631,6 +633,7 @@ export function ManualWalkthrough({
       return;
     }
     setIsSaving(true);
+    onSavingChange?.(true);
     setHydrateError(null);
     setSavedMessage(null);
     try {
@@ -648,6 +651,7 @@ export function ManualWalkthrough({
       setHydrateError(t('saveFailed'));
     } finally {
       setIsSaving(false);
+      onSavingChange?.(false);
     }
   };
 

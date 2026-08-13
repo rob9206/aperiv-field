@@ -9,7 +9,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MinTouchTarget, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { captureFileLifecycle } from '@/lib/capture-files.native';
+import { captureFileLifecycle } from '@/lib/capture-files-runtime';
 import { loadDraftStore, mutateDraftStore } from '@/lib/draft-store';
 import { type DraftStore } from '@/lib/walkthrough-draft';
 import { useAuth } from '@/providers/auth-provider';
