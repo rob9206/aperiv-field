@@ -1,12 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { parseDraftStoreRaw } from './draft-store-parse';
+import { parseDraftStoreRaw } from './draft-store-parse.ts';
 import {
   normalizeDraftStore,
   roomHasVerifiedScan,
   scanMeasuredSqft,
-} from './walkthrough-schema';
-import type { RoomScanArtifact } from './walkthrough-schema';
+} from './walkthrough-schema.ts';
+import type { RoomScanArtifact } from './walkthrough-schema.ts';
 import type {
   DraftStore,
   ManualWalkthroughDraft,

@@ -2,17 +2,17 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  LEGACY_DRAFT_KEY,
+  STORE_KEY,
   STORE_BACKUP_KEY,
   createDraftStoreRepository,
   type KeyValueStorage,
 } from './draft-store.ts';
-import {
-  LEGACY_DRAFT_KEY,
-  STORE_KEY,
-  type DraftStore,
-  type ManualWalkthroughDraft,
-  type RoomCapture,
-  type RoomScanArtifact,
+import type {
+  DraftStore,
+  ManualWalkthroughDraft,
+  RoomCapture,
+  RoomScanArtifact,
 } from './walkthrough-draft.ts';
 
 const capturedAt = '2026-08-12T00:00:00.000Z';
