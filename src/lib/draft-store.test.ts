@@ -390,6 +390,54 @@ describe('draft store cleanup trust state', () => {
     assert.equal(storage.values.get(STORE_BACKUP_KEY), raw);
   });
 
+  it('marks pruning a malformed scan artifact from a retained room as degraded', async () => {
+    const current = draft('artifact-pruned');
+    current.rooms[0] = {
+      ...current.rooms[0],
+      scanned: true,
+      scanArtifact: artifact(100, {
+        capturedAt: '2026-08-11T20:00:00-04:00',
+      }),
+    };
+    const raw = JSON.stringify(store(current));
+    const storage = memoryStorage({ [STORE_KEY]: raw });
+    const repository = createDraftStoreRepository(storage);
+
+    const state = await repository.loadDraftStoreState();
+
+    assert.equal(state.degraded, true);
+    assert.equal(state.recoveryPending, true);
+    assert.equal(
+      state.store.drafts[current.id].rooms[0].scanArtifact,
+      undefined
+    );
+    assert.equal(storage.values.get(STORE_BACKUP_KEY), raw);
+  });
+
+  it('marks pruning a recoverable photo URI from a retained room as degraded', async () => {
+    const current = draft('photo-pruned');
+    (
+      current.rooms[0] as unknown as {
+        photos: unknown[];
+      }
+    ).photos = [
+      {
+        id: 42,
+        uri: 'file:///documents/walkthrough-photos/photo-pruned/lost.jpg',
+      },
+    ];
+    const raw = JSON.stringify(store(current));
+    const storage = memoryStorage({ [STORE_KEY]: raw });
+    const repository = createDraftStoreRepository(storage);
+
+    const state = await repository.loadDraftStoreState();
+
+    assert.equal(state.degraded, true);
+    assert.equal(state.recoveryPending, true);
+    assert.deepEqual(state.store.drafts[current.id].rooms[0].photos, []);
+    assert.equal(storage.values.get(STORE_BACKUP_KEY), raw);
+  });
+
   it('keeps cleanup recovery-pending after a later normalized mutation', async () => {
     const storage = memoryStorage({ [STORE_KEY]: '{corrupt' });
     const repository = createDraftStoreRepository(storage);

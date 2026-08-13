@@ -92,6 +92,58 @@ describe('parseDraftStoreRaw', () => {
   });
 });
 
+describe('room detail edits', () => {
+  it('preserves an explicit room skip across notes, condition, and part edits', async () => {
+    const modulePath = './walkthrough-draft.ts';
+    const walkthrough = await import(modulePath);
+    const patchRoomDetails = (
+      walkthrough as unknown as {
+        patchRoomDetails?: (
+          room: ReturnType<typeof createRoom> & {
+            skipped?: boolean;
+            issueParts?: string[];
+            hasDamage?: boolean;
+          },
+          patch: Record<string, unknown>
+        ) => ReturnType<typeof createRoom> & {
+          skipped?: boolean;
+          issueParts?: string[];
+          hasDamage?: boolean;
+        };
+      }
+    ).patchRoomDetails;
+    assert.equal(typeof patchRoomDetails, 'function');
+    if (!patchRoomDetails) {
+      return;
+    }
+
+    const skipped = {
+      ...createRoom('Living'),
+      skipped: true,
+      issueParts: ['paint'],
+      hasDamage: true,
+    };
+    assert.equal(
+      patchRoomDetails(skipped, { notes: 'Touch up trim' }).skipped,
+      true
+    );
+    assert.equal(
+      patchRoomDetails(skipped, {
+        condition: 'watch',
+        hasDamage: true,
+      }).skipped,
+      true
+    );
+    assert.equal(
+      patchRoomDetails(skipped, {
+        issueParts: ['paint', 'wall'],
+        hasDamage: true,
+      }).skipped,
+      true
+    );
+  });
+});
+
 describe('scan verification', () => {
   const artifact = (
     measuredSqft: number,

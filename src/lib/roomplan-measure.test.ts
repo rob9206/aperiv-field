@@ -31,6 +31,63 @@ describe('parseVerifiedRoomPlanMeasurement', () => {
     assert.ok(Math.abs(result.measuredSqft - 12 * SQM_TO_SQFT) < 0.01);
   });
 
+  it('falls back to dimensions when a nearly constant polygon axis is noisy', () => {
+    const result = parseVerifiedRoomPlanMeasurement({
+      floors: [
+        {
+          dimensions: [3, 4, 0],
+          polygonCorners: [
+            [0, 0, 0],
+            [4, 0.000001, 0],
+            [4, -0.000001, 3],
+            [0, 0.000002, 3],
+          ],
+        },
+      ],
+    });
+
+    assert.equal(result?.source, 'roomplan-floor-dimensions');
+    assert.ok(result);
+    assert.ok(Math.abs(result.measuredSqft - 12 * SQM_TO_SQFT) < 0.01);
+  });
+
+  it('falls back to dimensions when polygon corners have zero area', () => {
+    const result = parseVerifiedRoomPlanMeasurement({
+      floors: [
+        {
+          dimensions: [3, 4, 0],
+          polygonCorners: [
+            [0, 0, 0],
+            [1, 0, 1],
+            [2, 0, 2],
+          ],
+        },
+      ],
+    });
+
+    assert.equal(result?.source, 'roomplan-floor-dimensions');
+    assert.ok(result);
+    assert.ok(Math.abs(result.measuredSqft - 12 * SQM_TO_SQFT) < 0.01);
+  });
+
+  it('rejects a bad polygon when dimensions are also invalid', () => {
+    assert.equal(
+      parseVerifiedRoomPlanMeasurement({
+        floors: [
+          {
+            dimensions: [4, 0, 0],
+            polygonCorners: [
+              [0, 0, 0],
+              [1, 0, 1],
+              [2, 0, 2],
+            ],
+          },
+        ],
+      }),
+      null
+    );
+  });
+
   it('does not verify from walls', () => {
     assert.equal(
       parseVerifiedRoomPlanMeasurement({

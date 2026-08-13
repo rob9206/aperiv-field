@@ -713,6 +713,59 @@ describe('directory orphan recovery', () => {
     assert.deepEqual(events, []);
   });
 
+  it('blocks targeted cleanup and orphan sweeping for a degraded current read', async () => {
+    const storage = memoryStorage(store());
+    storage.values.set(STORE_KEY, '{corrupt');
+    const rootTouches: string[] = [];
+    const listTouches: string[] = [];
+    const events: string[] = [];
+    const lifecycle = createCaptureFileLifecycle(
+      createDraftStoreRepository(storage),
+      createCaptureFileService(
+        fakeAdapter({ events, rootTouches, listTouches })
+      )
+    );
+
+    await lifecycle.cleanupExportedScanPaths({
+      jsonPath: `${scansRoot}/failed/Room.json`,
+      usdzPath: `${scansRoot}/failed/Room.usdz`,
+    });
+    const swept = await lifecycle.sweepOrphans({ force: true });
+
+    assert.equal(swept, false);
+    assert.deepEqual(rootTouches, []);
+    assert.deepEqual(listTouches, []);
+    assert.deepEqual(events, []);
+  });
+
+  it('allows targeted cleanup but blocks broad sweeping for historical recovery', async () => {
+    const storage = memoryStorage(store());
+    storage.values.set(STORE_BACKUP_KEY, '{"drafts":{"held":{}}}');
+    const rootTouches: string[] = [];
+    const listTouches: string[] = [];
+    const events: string[] = [];
+    const lifecycle = createCaptureFileLifecycle(
+      createDraftStoreRepository(storage),
+      createCaptureFileService(
+        fakeAdapter({ events, rootTouches, listTouches })
+      )
+    );
+
+    await lifecycle.cleanupExportedScanPaths({
+      jsonPath: `${scansRoot}/failed/Room.json`,
+      usdzPath: `${scansRoot}/failed/Room.usdz`,
+    });
+    const swept = await lifecycle.sweepOrphans({ force: true });
+
+    assert.equal(swept, false);
+    assert.deepEqual(rootTouches, ['roots']);
+    assert.deepEqual(listTouches, []);
+    assert.deepEqual(events, [
+      `delete-file:${scansRoot}/failed/Room.json`,
+      `delete-file:${scansRoot}/failed/Room.usdz`,
+    ]);
+  });
+
   it('forces a trusted sweep after deletion to remove empty owned directories', async () => {
     const current = draft();
     current.rooms[0].photos = [photo('one')];

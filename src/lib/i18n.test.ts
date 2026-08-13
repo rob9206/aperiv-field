@@ -30,8 +30,14 @@ describe('t', () => {
   it('localizes scan failures and the unverified escape hatch', () => {
     assert.equal(t('en', 'scanErrorTitle'), 'Room scan issue');
     assert.equal(t('es', 'scanErrorTitle'), 'Problema con el escaneo');
-    assert.equal(t('en', 'scanMeasureFailed').includes('sq ft'), true);
-    assert.equal(t('es', 'scanMeasureFailed').includes('pies²'), true);
+    assert.equal(
+      t('en', 'scanMeasureFailed'),
+      'Square footage could not be verified from this scan. Try LiDAR again or continue unverified.'
+    );
+    assert.equal(
+      t('es', 'scanMeasureFailed'),
+      'No se pudieron verificar los pies² con este escaneo. Intenta usar LiDAR de nuevo o continúa sin verificar.'
+    );
     assert.equal(t('en', 'continueUnverified'), 'Continue unverified');
     assert.equal(t('es', 'continueUnverified'), 'Continuar sin verificar');
     assert.equal(t('en', 'shareScanFailed').includes('share'), true);
