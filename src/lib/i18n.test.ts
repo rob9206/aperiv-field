@@ -22,6 +22,13 @@ describe('t', () => {
     assert.equal(t('es', 'newJob'), 'Nuevo trabajo');
   });
 
+  it('localizes scan failures and the unverified escape hatch', () => {
+    assert.equal(t('en', 'scanMeasureFailed').includes('sq ft'), true);
+    assert.equal(t('es', 'scanMeasureFailed').includes('pies²'), true);
+    assert.equal(t('en', 'continueUnverified'), 'Continue unverified');
+    assert.equal(t('es', 'continueUnverified'), 'Continuar sin verificar');
+  });
+
   it('never exposes jargon in crew strings', () => {
     const keys = [
       'myJobs',

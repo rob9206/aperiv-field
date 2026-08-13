@@ -360,6 +360,34 @@ describe('draft store recovery', () => {
 });
 
 describe('commitRoomScan', () => {
+  it('never assigns a late scan to the newly active room', async () => {
+    const initial = store(
+      draft('draft-a', ['room-a']),
+      draft('draft-b', ['room-b'])
+    );
+    initial.activeDraftId = 'draft-b';
+    const storage = memoryStorage({
+      [STORE_KEY]: JSON.stringify(initial),
+    });
+    const repository = createDraftStoreRepository(storage);
+    const scanArtifact = artifact(100);
+
+    const result = await repository.commitRoomScan({
+      draftId: 'draft-a',
+      roomId: 'room-a',
+      artifact: scanArtifact,
+    });
+
+    assert.deepEqual(
+      result?.store.drafts['draft-a'].rooms[0].scanArtifact,
+      scanArtifact
+    );
+    assert.equal(
+      result?.store.drafts['draft-b'].rooms[0].scanArtifact,
+      undefined
+    );
+  });
+
   it('returns null for missing draft and room IDs', async () => {
     const storage = memoryStorage({
       [STORE_KEY]: JSON.stringify(store(draft('a', ['room-a']))),
