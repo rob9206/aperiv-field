@@ -23,9 +23,12 @@ export default function HomeScreen() {
   const [store, setStore] = useState<DraftStore | null>(null);
   const [hasSaveError, setHasSaveError] = useState(false);
 
-  const refreshStore = useCallback(() => {
+  const refreshStore = useCallback((clearSaveError = false) => {
     void loadDraftStore().then(
       (next) => {
+        if (clearSaveError) {
+          setHasSaveError(false);
+        }
         setStore(next);
         void captureFileLifecycle.sweepOrphans().catch(() => undefined);
       },
@@ -36,7 +39,7 @@ export default function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       if (signedIn) {
-        refreshStore();
+        refreshStore(true);
       }
     }, [signedIn, refreshStore])
   );

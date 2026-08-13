@@ -308,9 +308,11 @@ export function createCaptureFileLifecycle(
   async function cleanAgainstLatest(candidates: readonly string[]) {
     try {
       const state = await repository.loadDraftStoreState();
-      if (state.degraded || state.recoveryPending) {
+      if (state.degraded) {
         return;
       }
+      // A historical backup blocks broad sweeps, but the normalized current
+      // store remains authoritative for reference-checked compensation.
       files.deleteUnreferenced(candidates, state.store);
     } catch {
       // Without committed truth it is not safe to delete; sweep can recover.

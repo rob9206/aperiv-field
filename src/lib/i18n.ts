@@ -56,7 +56,7 @@ const en = {
   scanErrorTitle: 'Room scan issue',
   scanInterrupted: 'Scan interrupted',
   scanMeasureFailed:
-    'Scan saved, but sq ft could not be read. Scan the room again.',
+    'Square footage could not be verified from this scan. Try LiDAR again or continue unverified.',
   scanDraftMissing:
     'Could not save the scan to this job. Go back and reopen the job.',
   scanRetry: 'Try LiDAR again',
@@ -184,7 +184,7 @@ const es: { [K in keyof typeof en]: string } = {
   scanErrorTitle: 'Problema con el escaneo',
   scanInterrupted: 'Escaneo interrumpido',
   scanMeasureFailed:
-    'Escaneo guardado, pero no se pudieron leer los pies². Escanea la habitación de nuevo.',
+    'No se pudieron verificar los pies² con este escaneo. Intenta usar LiDAR de nuevo o continúa sin verificar.',
   scanDraftMissing:
     'No se pudo guardar el escaneo en este trabajo. Vuelve a abrir el trabajo.',
   scanRetry: 'Intentar LiDAR de nuevo',

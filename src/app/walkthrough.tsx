@@ -14,6 +14,10 @@ import { useTheme } from '@/hooks/use-theme';
 import { captureFileLifecycle } from '@/lib/capture-files-runtime';
 import { readVerifiedMeasurementFromExport } from '@/lib/read-roomplan-measure';
 import type { TranslationKey } from '@/lib/i18n';
+import {
+  SCAN_PROCESSING_TIMEOUT_MS,
+  shouldHandleProcessingTimeout,
+} from '@/lib/scan-processing';
 import type { RoomScanArtifact } from '@/lib/walkthrough-draft';
 import { useLocale } from '@/providers/locale-provider';
 import {
@@ -63,9 +67,18 @@ export default function WalkthroughScreen() {
   const startRequested = useRef(false);
   const stopRequested = useRef(false);
   const exportInFlight = useRef(false);
+  const processingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearProcessingTimeout = useCallback(() => {
+    if (processingTimeout.current !== null) {
+      clearTimeout(processingTimeout.current);
+      processingTimeout.current = null;
+    }
+  }, []);
 
   const enterManual = useCallback(
     (lidarAvailable: boolean, forceUnverified = manualUnverified.current) => {
+      clearProcessingTimeout();
       activeScan.current = null;
       manualUnverified.current = forceUnverified;
       stopRequested.current = false;
@@ -77,7 +90,7 @@ export default function WalkthroughScreen() {
         manualUnverified: forceUnverified,
       });
     },
-    []
+    [clearProcessingTimeout]
   );
 
   const showScanError = useCallback(
@@ -88,26 +101,53 @@ export default function WalkthroughScreen() {
       >,
       retryTarget: ScanTarget
     ) => {
+      clearProcessingTimeout();
       activeScan.current = null;
       stopRequested.current = false;
       startRequested.current = false;
       exportInFlight.current = false;
       setScanState({ phase: 'error', messageKey, retryTarget });
     },
-    []
+    [clearProcessingTimeout]
   );
 
-  const prepareScan = useCallback((target: ScanTarget) => {
-    const scan: ActiveScan = {
-      scanId: `scan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      target,
-    };
-    activeScan.current = scan;
-    stopRequested.current = false;
-    startRequested.current = false;
-    exportInFlight.current = false;
-    setScanState({ phase: 'ready', scan });
-  }, []);
+  const prepareScan = useCallback(
+    (target: ScanTarget) => {
+      clearProcessingTimeout();
+      const scan: ActiveScan = {
+        scanId: `scan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        target,
+      };
+      activeScan.current = scan;
+      stopRequested.current = false;
+      startRequested.current = false;
+      exportInFlight.current = false;
+      setScanState({ phase: 'ready', scan });
+    },
+    [clearProcessingTimeout]
+  );
+
+  const startProcessingTimeout = useCallback(
+    (scan: ActiveScan) => {
+      clearProcessingTimeout();
+      processingTimeout.current = setTimeout(() => {
+        processingTimeout.current = null;
+        if (
+          !shouldHandleProcessingTimeout({
+            activeScanId: activeScan.current?.scanId ?? null,
+            timeoutScanId: scan.scanId,
+            stopRequested: stopRequested.current,
+            exportInFlight: exportInFlight.current,
+          })
+        ) {
+          return;
+        }
+        showScanError('scanInterrupted', scan.target);
+        void cancelSession().catch(() => undefined);
+      }, SCAN_PROCESSING_TIMEOUT_MS);
+    },
+    [clearProcessingTimeout, showScanError]
+  );
 
   const resetManualUnverified = useCallback(() => {
     manualUnverified.current = false;
@@ -125,6 +165,7 @@ export default function WalkthroughScreen() {
     }
 
     exportInFlight.current = true;
+    clearProcessingTimeout();
     setScanState({ phase: 'processing' });
 
     let exportedPaths: { jsonPath: string; usdzPath: string } | null = null;
@@ -178,7 +219,7 @@ export default function WalkthroughScreen() {
         exportInFlight.current = false;
       }
     }
-  }, [enterManual, showScanError]);
+  }, [clearProcessingTimeout, enterManual, showScanError]);
 
   useEffect(() => {
     let isMounted = true;
@@ -226,10 +267,11 @@ export default function WalkthroughScreen() {
     ];
 
     return () => {
+      clearProcessingTimeout();
       activeScan.current = null;
       subscriptions.forEach((subscription) => subscription.remove());
     };
-  }, [saveProcessedScan, showScanError]);
+  }, [clearProcessingTimeout, saveProcessedScan, showScanError]);
 
   useEffect(() => {
     if (scanState.phase !== 'scanning' || startRequested.current) {
@@ -270,6 +312,7 @@ export default function WalkthroughScreen() {
 
     stopRequested.current = true;
     setScanState({ phase: 'processing' });
+    startProcessingTimeout(scan);
 
     try {
       await finishSession();
@@ -287,6 +330,7 @@ export default function WalkthroughScreen() {
     }
 
     stopRequested.current = true;
+    clearProcessingTimeout();
     activeScan.current = null;
 
     try {

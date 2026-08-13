@@ -113,12 +113,11 @@ export function parseVerifiedRoomPlanMeasurement(
     }
 
     const fromPolygon = polygonArea(floorValue.polygonCorners);
-    if (fromPolygon === null) {
-      return null;
-    }
     if (fromPolygon !== undefined) {
-      squareMeters += fromPolygon;
-      continue;
+      if (fromPolygon !== null) {
+        squareMeters += fromPolygon;
+        continue;
+      }
     }
 
     const fromDimensions = dimensionsArea(floorValue.dimensions);

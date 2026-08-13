@@ -127,6 +127,58 @@ function hasDraft(store: DraftStore, draftId: string): boolean {
   return Object.prototype.hasOwnProperty.call(store.drafts, draftId);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function droppedNestedCaptureReference(
+  parsed: NonNullable<ReturnType<typeof parseDraftStoreRaw>>,
+  normalized: DraftStore
+): boolean {
+  for (const [draftId, rawDraft] of Object.entries(parsed.drafts)) {
+    const currentDraft = normalized.drafts[draftId];
+    if (
+      !currentDraft ||
+      !isRecord(rawDraft) ||
+      !Array.isArray(rawDraft.rooms)
+    ) {
+      continue;
+    }
+
+    for (let index = 0; index < rawDraft.rooms.length; index += 1) {
+      const rawRoom = rawDraft.rooms[index];
+      const currentRoom = currentDraft.rooms[index];
+      if (!currentRoom || !isRecord(rawRoom)) {
+        continue;
+      }
+
+      if (
+        isRecord(rawRoom.scanArtifact) &&
+        currentRoom.scanArtifact === undefined
+      ) {
+        return true;
+      }
+
+      if (!Array.isArray(rawRoom.photos)) {
+        continue;
+      }
+      const currentPhotoUris = new Set(
+        currentRoom.photos.map((photo) => photo.uri)
+      );
+      const droppedPhotoUri = rawRoom.photos.some(
+        (photo) =>
+          isRecord(photo) &&
+          typeof photo.uri === 'string' &&
+          !currentPhotoUris.has(photo.uri)
+      );
+      if (droppedPhotoUri) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 export function createDraftStoreRepository(
   storage: KeyValueStorage
 ): DraftStoreRepository {
@@ -179,8 +231,9 @@ export function createDraftStoreRepository(
       const degraded =
         raw !== null &&
         parsed !== null &&
-        Object.keys(parsed.drafts).length >
-          Object.keys(normalized.drafts).length;
+        (Object.keys(parsed.drafts).length >
+          Object.keys(normalized.drafts).length ||
+          droppedNestedCaptureReference(parsed, normalized));
       if (degraded) {
         await preserveInvalidV2Unlocked(raw);
       }

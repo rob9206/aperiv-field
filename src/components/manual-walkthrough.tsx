@@ -25,6 +25,10 @@ import {
 } from '@/lib/guide-steps';
 import { defaultRoomNames, type TranslationKey } from '@/lib/i18n';
 import {
+  patchRoomDetails,
+  type RoomDetailPatch,
+} from '@/lib/room-details';
+import {
   completeDraft,
   loadDraftStore,
   mutateDraftById,
@@ -336,15 +340,13 @@ export function ManualWalkthrough({
       };
     });
 
-  const patchRoom = (patch: Partial<NonNullable<typeof room>>) => {
+  const patchRoom = (patch: RoomDetailPatch) => {
     if (!draft || !room) {
       return;
     }
-    void updateRoomById(draft.id, room.id, (latest) => ({
-      ...latest,
-      ...patch,
-      skipped: false,
-    }));
+    void updateRoomById(draft.id, room.id, (latest) =>
+      patchRoomDetails(latest, patch)
+    );
   };
 
   const startJob = () => {
@@ -595,13 +597,13 @@ export function ManualWalkthrough({
     if (!draft || !room) {
       return;
     }
-    void updateRoomById(draft.id, room.id, (latest) => ({
-      ...latest,
-      condition,
-      hasDamage: condition !== 'good',
-      issueParts: condition === 'good' ? [] : latest.issueParts ?? [],
-      skipped: false,
-    }));
+    void updateRoomById(draft.id, room.id, (latest) =>
+      patchRoomDetails(latest, {
+        condition,
+        hasDamage: condition !== 'good',
+        issueParts: condition === 'good' ? [] : latest.issueParts ?? [],
+      })
+    );
   };
 
   const togglePart = (part: IssuePartKey) => {
@@ -613,12 +615,10 @@ export function ManualWalkthrough({
       const next = current.includes(part)
         ? current.filter((item) => item !== part)
         : [...current, part];
-      return {
-        ...latest,
+      return patchRoomDetails(latest, {
         issueParts: next,
         hasDamage: latest.condition !== 'good' || next.length > 0,
-        skipped: false,
-      };
+      });
     });
   };
 
