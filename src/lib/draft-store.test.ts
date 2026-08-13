@@ -384,4 +384,44 @@ describe('commitRoomScan', () => {
     assert.equal(saved.drafts.a.rooms[0].scanArtifact, undefined);
     assert.equal(saved.drafts.a.rooms[0].scanned, false);
   });
+
+  it('rejects scan IDs and JSON paths already committed to another room', async () => {
+    const existing = draft('a', ['living', 'kitchen']);
+    existing.rooms[0] = {
+      ...existing.rooms[0],
+      scanned: true,
+      scanArtifact: artifact(100),
+      measuredSqftFromScan: 100,
+    };
+    const storage = memoryStorage({
+      [STORE_KEY]: JSON.stringify(store(existing)),
+    });
+    const repository = createDraftStoreRepository(storage);
+
+    assert.equal(
+      await repository.commitRoomScan({
+        draftId: 'a',
+        roomId: 'kitchen',
+        artifact: artifact(80, {
+          jsonPath: '/scan/Kitchen.json',
+          usdzPath: '/scan/Kitchen.usdz',
+        }),
+      }),
+      null
+    );
+    assert.equal(
+      await repository.commitRoomScan({
+        draftId: 'a',
+        roomId: 'kitchen',
+        artifact: artifact(80, {
+          scanId: 'scan-2',
+          usdzPath: '/scan/Kitchen.usdz',
+        }),
+      }),
+      null
+    );
+
+    const saved = await repository.loadDraftStore();
+    assert.equal(saved.drafts.a.rooms[1].scanArtifact, undefined);
+  });
 });
