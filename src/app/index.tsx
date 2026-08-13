@@ -20,6 +20,7 @@ export default function HomeScreen() {
   const { t } = useLocale();
   const signedIn = !!session;
   const [store, setStore] = useState<DraftStore | null>(null);
+  const [hasSaveError, setHasSaveError] = useState(false);
 
   const refreshStore = useCallback(() => {
     void loadDraftStore().then(setStore, () =>
@@ -39,46 +40,61 @@ export default function HomeScreen() {
     router.push({ pathname: '/walkthrough', params: { mode: 'new' } });
   };
 
+  const handleMutationFailure = () => {
+    setHasSaveError(true);
+    refreshStore();
+  };
+
   const onOpenJob = async (id: string) => {
-    const committed = await mutateDraftStore((current) => {
-      if (!Object.prototype.hasOwnProperty.call(current.drafts, id)) {
-        return null;
+    try {
+      const committed = await mutateDraftStore((current) => {
+        if (!Object.prototype.hasOwnProperty.call(current.drafts, id)) {
+          return null;
+        }
+        return {
+          store: { ...current, activeDraftId: id },
+          value: undefined,
+        };
+      });
+      if (!committed) {
+        handleMutationFailure();
+        return;
       }
-      return {
-        store: { ...current, activeDraftId: id },
-        value: undefined,
-      };
-    });
-    if (!committed) {
-      refreshStore();
-      return;
+      setHasSaveError(false);
+      setStore(committed.store);
+      router.push({
+        pathname: '/walkthrough',
+        params: { mode: 'resume', id },
+      });
+    } catch {
+      handleMutationFailure();
     }
-    setStore(committed.store);
-    router.push({
-      pathname: '/walkthrough',
-      params: { mode: 'resume', id },
-    });
   };
 
   const onDeleteJob = async (id: string) => {
-    const committed = await mutateDraftStore((current) => {
-      if (!Object.prototype.hasOwnProperty.call(current.drafts, id)) {
-        return null;
+    try {
+      const committed = await mutateDraftStore((current) => {
+        if (!Object.prototype.hasOwnProperty.call(current.drafts, id)) {
+          return null;
+        }
+        const { [id]: _removed, ...rest } = current.drafts;
+        return {
+          store: {
+            activeDraftId:
+              current.activeDraftId === id ? null : current.activeDraftId,
+            drafts: rest,
+          },
+          value: undefined,
+        };
+      });
+      if (!committed) {
+        handleMutationFailure();
+        return;
       }
-      const { [id]: _removed, ...rest } = current.drafts;
-      return {
-        store: {
-          activeDraftId:
-            current.activeDraftId === id ? null : current.activeDraftId,
-          drafts: rest,
-        },
-        value: undefined,
-      };
-    });
-    if (committed) {
+      setHasSaveError(false);
       setStore(committed.store);
-    } else {
-      refreshStore();
+    } catch {
+      handleMutationFailure();
     }
   };
 
@@ -120,6 +136,11 @@ export default function HomeScreen() {
                   </ThemedText>
                 ) : null}
               </View>
+              {hasSaveError ? (
+                <ThemedText type="default" style={{ color: theme.danger }}>
+                  {t('saveFailed')}
+                </ThemedText>
+              ) : null}
               {store ? (
                 <JobList
                   store={store}

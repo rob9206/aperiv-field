@@ -296,16 +296,22 @@ export function draftCanBeVerified(draft: ManualWalkthroughDraft): boolean {
   }
   const scanIds = new Set<string>();
   const jsonPaths = new Set<string>();
+  const usdzPaths = new Set<string>();
   for (const room of draft.rooms) {
     if (!roomHasVerifiedScan(room)) {
       return false;
     }
     const artifact = room.scanArtifact!;
-    if (scanIds.has(artifact.scanId) || jsonPaths.has(artifact.jsonPath)) {
+    if (
+      scanIds.has(artifact.scanId) ||
+      jsonPaths.has(artifact.jsonPath) ||
+      usdzPaths.has(artifact.usdzPath)
+    ) {
       return false;
     }
     scanIds.add(artifact.scanId);
     jsonPaths.add(artifact.jsonPath);
+    usdzPaths.add(artifact.usdzPath);
   }
   return true;
 }

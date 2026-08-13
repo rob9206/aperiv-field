@@ -152,8 +152,17 @@ export function createDraftStoreRepository(
 
   async function readUnlocked(): Promise<DraftStore> {
     const raw = await storage.getItem(STORE_KEY);
-    const normalized = normalizeDraftStore(parseDraftStoreRaw(raw));
+    const parsed = parseDraftStoreRaw(raw);
+    const normalized = normalizeDraftStore(parsed);
     if (normalized !== null) {
+      if (
+        raw !== null &&
+        parsed !== null &&
+        Object.keys(parsed.drafts).length >
+          Object.keys(normalized.drafts).length
+      ) {
+        await preserveInvalidV2Unlocked(raw);
+      }
       return normalized;
     }
     if (raw !== null) {
@@ -233,7 +242,8 @@ export function createDraftStoreRepository(
         (room, index) =>
           index !== roomIndex &&
           (room.scanArtifact?.scanId === input.artifact.scanId ||
-            room.scanArtifact?.jsonPath === input.artifact.jsonPath)
+            room.scanArtifact?.jsonPath === input.artifact.jsonPath ||
+            room.scanArtifact?.usdzPath === input.artifact.usdzPath)
       );
       if (
         roomIndex < 0 ||
@@ -246,7 +256,12 @@ export function createDraftStoreRepository(
         return null;
       }
 
-      const replaced = draft.rooms[roomIndex].scanArtifact;
+      const existingArtifact = draft.rooms[roomIndex].scanArtifact;
+      const replaced =
+        existingArtifact?.jsonPath === input.artifact.jsonPath &&
+        existingArtifact.usdzPath === input.artifact.usdzPath
+          ? undefined
+          : existingArtifact;
       const rooms = draft.rooms.map((room, index) =>
         index === roomIndex
           ? {
