@@ -337,7 +337,7 @@ export function normalizeDraftStore(value: unknown): DraftStore | null {
   >;
   const activeDraftId =
     typeof value.activeDraftId === 'string' &&
-    Object.hasOwn(drafts, value.activeDraftId)
+    Object.prototype.hasOwnProperty.call(drafts, value.activeDraftId)
       ? value.activeDraftId
       : null;
   return { activeDraftId, drafts };

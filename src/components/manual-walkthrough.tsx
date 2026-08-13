@@ -24,17 +24,21 @@ import {
 } from '@/lib/guide-steps';
 import { defaultRoomNames, type TranslationKey } from '@/lib/i18n';
 import {
+  loadDraftStore,
+  mutateDraftById,
+  mutateDraftStore,
+} from '@/lib/draft-store';
+import {
   createDraft,
   createRoom,
-  deletePhotoFile,
   draftHasScanMeasure,
-  loadDraftStore,
   measuredSqft,
   persistPhoto,
   recordedSqftValue,
-  saveDraftStore,
+  scanMeasuredSqft,
   type DraftStore,
   type ManualWalkthroughDraft,
+  type RoomCapture,
   type RoomCondition,
   type VerificationStatus,
 } from '@/lib/walkthrough-draft';
@@ -167,44 +171,78 @@ export function ManualWalkthrough({
   };
 
   useEffect(() => {
-    loadDraftStore().then(
-      (loaded) => {
-        let next = loaded;
-        const activeId = loaded.activeDraftId;
-        const active = activeId ? loaded.drafts[activeId] : null;
-        const inProgress =
-          !!active &&
-          !active.completedAt &&
-          (active.guidePhase != null ||
-            active.rooms.some((item) => item.scanned || item.photos.length > 0));
+    let mounted = true;
+
+    const hydrate = async () => {
+      try {
+        let next: DraftStore;
+        let nextStep: ScreenStep = 'checkin';
 
         if (params.mode === 'resume' && params.id) {
-          const target = loaded.drafts[params.id];
-          if (target) {
-            next = { ...loaded, activeDraftId: params.id };
-            void saveDraftStore(next);
-            setScreenStep(target.completedAt ? 'done' : 'roomGuide');
-          }
-        } else if (params.mode === 'new' && inProgress) {
-          next = loaded;
-          setScreenStep('roomGuide');
+          const selected = await mutateDraftStore((current) => {
+            const target = current.drafts[params.id!];
+            if (!target) {
+              return null;
+            }
+            return {
+              store: { ...current, activeDraftId: params.id! },
+              value: target.completedAt ? 'done' : 'roomGuide',
+            };
+          });
+          next = selected?.store ?? (await loadDraftStore());
+          nextStep = selected?.value ?? 'checkin';
         } else if (params.mode === 'new') {
-          next = { ...loaded, activeDraftId: null };
-          void saveDraftStore(next);
-          setScreenStep('checkin');
-        } else if (active) {
-          setScreenStep(active.completedAt ? 'done' : 'roomGuide');
+          const selected = await mutateDraftStore((current) => {
+            const activeId = current.activeDraftId;
+            const active = activeId ? current.drafts[activeId] : null;
+            const inProgress =
+              !!active &&
+              !active.completedAt &&
+              (active.guidePhase != null ||
+                active.rooms.some(
+                  (item) => item.scanned || item.photos.length > 0
+                ));
+            return {
+              store: inProgress
+                ? current
+                : { ...current, activeDraftId: null },
+              value: inProgress ? 'roomGuide' : 'checkin',
+            };
+          });
+          next = selected!.store;
+          nextStep = selected!.value;
+        } else {
+          next = await loadDraftStore();
+          const activeId = next.activeDraftId;
+          const active = activeId ? next.drafts[activeId] : null;
+          nextStep = active
+            ? active.completedAt
+              ? 'done'
+              : 'roomGuide'
+            : 'checkin';
+        }
+
+        if (!mounted) {
+          return;
         }
         storeRef.current = next;
         setStore(next);
-      },
-      () => {
+        setScreenStep(nextStep);
+      } catch {
+        if (!mounted) {
+          return;
+        }
         const empty: DraftStore = { activeDraftId: null, drafts: {} };
         storeRef.current = empty;
         setStore(empty);
         setHydrateError(t('restoreFailed'));
       }
-    );
+    };
+
+    void hydrate();
+    return () => {
+      mounted = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- remount on route params only
   }, [params.mode, params.id]);
 
@@ -212,55 +250,67 @@ export function ManualWalkthrough({
     storeRef.current = store;
   }, [store]);
 
-  const persistStore = (next: DraftStore) => {
+  const applyCommittedStore = (next: DraftStore) => {
+    storeRef.current = next;
     setStore(next);
-    setSavedMessage(null);
-    void saveDraftStore(next).catch(() => {
-      setHydrateError(t('saveFailed'));
-    });
   };
 
-  const persistDraft = (next: ManualWalkthroughDraft) => {
-    setStore((current) => {
-      if (!current) {
-        return current;
-      }
-      const updated: DraftStore = {
-        activeDraftId: next.id,
-        drafts: { ...current.drafts, [next.id]: next },
-      };
-      void saveDraftStore(updated).catch(() => {
-        setHydrateError(t('saveFailed'));
-      });
-      return updated;
-    });
-    setSavedMessage(null);
-  };
-
-  const updateGuide = (
-    patch: Partial<ManualWalkthroughDraft>,
-    roomsPatch?: ManualWalkthroughDraft['rooms']
+  const persistDraftMutation = async (
+    draftId: string,
+    mutation: (
+      latest: ManualWalkthroughDraft
+    ) => ManualWalkthroughDraft | null
   ) => {
-    if (!draft) {
-      return;
+    setSavedMessage(null);
+    try {
+      const committed = await mutateDraftById(draftId, (latest) => {
+        const next = mutation(latest);
+        return next === null ? null : { draft: next, value: undefined };
+      });
+      if (committed) {
+        applyCommittedStore(committed.store);
+      }
+      return committed;
+    } catch {
+      setHydrateError(t('saveFailed'));
+      return null;
     }
-    persistDraft({
-      ...draft,
-      ...patch,
-      rooms: roomsPatch ?? draft.rooms,
-      completedAt: undefined,
-      guidePhase: 'room',
-    });
   };
+
+  const updateRoomById = (
+    draftId: string,
+    roomId: string,
+    mutation: (latest: RoomCapture) => RoomCapture
+  ) =>
+    persistDraftMutation(draftId, (latest) => {
+      let found = false;
+      const rooms = latest.rooms.map((item) => {
+        if (item.id !== roomId) {
+          return item;
+        }
+        found = true;
+        return mutation(item);
+      });
+      if (!found) {
+        return null;
+      }
+      return {
+        ...latest,
+        rooms,
+        completedAt: undefined,
+        guidePhase: 'room',
+      };
+    });
 
   const patchRoom = (patch: Partial<NonNullable<typeof room>>) => {
     if (!draft || !room) {
       return;
     }
-    const rooms = draft.rooms.map((item, i) =>
-      i === roomIndex ? { ...item, ...patch } : item
-    );
-    updateGuide({}, rooms);
+    void updateRoomById(draft.id, room.id, (latest) => ({
+      ...latest,
+      ...patch,
+      skipped: false,
+    }));
   };
 
   const startJob = () => {
@@ -273,12 +323,27 @@ export function ManualWalkthrough({
       recordedSqft,
       defaultRoomNames(locale)
     );
-    persistDraft(next);
-    router.setParams({ mode: 'resume', id: next.id });
-    setPropertyName('');
-    setUnitNumber('');
-    setRecordedSqft('');
-    setScreenStep('roomGuide');
+    void mutateDraftStore((current) => ({
+      store: {
+        activeDraftId: next.id,
+        drafts: { ...current.drafts, [next.id]: next },
+      },
+      value: undefined,
+    }))
+      .then((committed) => {
+        if (!committed) {
+          return;
+        }
+        applyCommittedStore(committed.store);
+        router.setParams({ mode: 'resume', id: next.id });
+        setPropertyName('');
+        setUnitNumber('');
+        setRecordedSqft('');
+        setScreenStep('roomGuide');
+      })
+      .catch(() => {
+        setHydrateError(t('saveFailed'));
+      });
   };
 
   useEffect(() => {
@@ -293,32 +358,45 @@ export function ManualWalkthrough({
       return;
     }
     const idx = active.guideRoomIndex ?? 0;
-    const rooms = active.rooms.map((item, i) =>
-      i === idx ? { ...item, scanned: true } : item
-    );
-    const measuredTotal = measuredSqft(rooms);
-    const updated: DraftStore = {
-      activeDraftId: active.id,
-      drafts: {
-        ...current.drafts,
-        [active.id]: {
-          ...active,
-          rooms,
-          measuredSqftFromScan:
-            measuredTotal > 0 ? measuredTotal : active.measuredSqftFromScan,
+    const roomId = active.rooms[idx]?.id;
+    if (!roomId) {
+      return;
+    }
+    void mutateDraftById(active.id, (latest) => {
+      const roomExists = latest.rooms.some((item) => item.id === roomId);
+      if (!roomExists) {
+        return null;
+      }
+      return {
+        draft: {
+          ...latest,
+          rooms: latest.rooms.map((item) =>
+            item.id === roomId ? { ...item, scanned: true } : item
+          ),
           guidePhase: 'room',
           completedAt: undefined,
         },
-      },
-    };
-    storeRef.current = updated;
-    setStore(updated);
-    void saveDraftStore(updated);
-    setScreenStep('roomGuide');
-  }, [scanCompletedToken]);
+        value: undefined,
+      };
+    })
+      .then((committed) => {
+        if (committed) {
+          storeRef.current = committed.store;
+          setStore(committed.store);
+          setScreenStep('roomGuide');
+        }
+      })
+      .catch(() => {
+        setHydrateError(t('saveFailed'));
+      });
+  }, [scanCompletedToken, t]);
 
   const addPhoto = async (source: 'camera' | 'library') => {
-    if (!storeRef.current?.activeDraftId) {
+    const current = storeRef.current;
+    const draftId = current?.activeDraftId;
+    const active = draftId ? current?.drafts[draftId] : null;
+    const roomId = active?.rooms[active.guideRoomIndex ?? 0]?.id;
+    if (!draftId || !roomId) {
       return;
     }
     setPhotoError(null);
@@ -345,31 +423,14 @@ export function ManualWalkthrough({
       if (result.canceled) {
         return;
       }
-      const latest = storeRef.current;
-      const activeId = latest?.activeDraftId;
-      const active = activeId ? latest?.drafts[activeId] : null;
-      if (!active) {
-        return;
-      }
-      const idx = active.guideRoomIndex ?? 0;
-      const currentRoom = active.rooms[idx];
-      if (!currentRoom) {
-        return;
-      }
       const added = result.assets.map((asset) =>
-        persistPhoto(active.id, asset.uri)
+        persistPhoto(draftId, asset.uri)
       );
-      const rooms = active.rooms.map((item, i) =>
-        i === idx
-          ? { ...item, photos: [...item.photos, ...added] }
-          : item
-      );
-      persistDraft({
-        ...active,
-        rooms,
-        completedAt: undefined,
-        guidePhase: 'room',
-      });
+      await updateRoomById(draftId, roomId, (latest) => ({
+        ...latest,
+        photos: [...latest.photos, ...added],
+        skipped: false,
+      }));
     } catch {
       setPhotoError(t('photoFailed'));
     }
@@ -379,24 +440,10 @@ export function ManualWalkthrough({
     if (!draft || !room) {
       return;
     }
-    const photo = room.photos.find((item) => item.id === photoId);
-    if (photo) {
-      deletePhotoFile(photo.uri);
-    }
-    const rooms = draft.rooms.map((item, i) =>
-      i === roomIndex
-        ? {
-            ...item,
-            photos: item.photos.filter((entry) => entry.id !== photoId),
-          }
-        : item
-    );
-    persistDraft({
-      ...draft,
-      rooms,
-      completedAt: undefined,
-      guidePhase: 'room',
-    });
+    void updateRoomById(draft.id, room.id, (latest) => ({
+      ...latest,
+      photos: latest.photos.filter((entry) => entry.id !== photoId),
+    }));
   };
 
   const goBackStep = () => {
@@ -407,17 +454,27 @@ export function ManualWalkthrough({
     if (screenStep !== 'roomGuide' || !draft) {
       return;
     }
-    if (roomIndex > 0) {
-      updateGuide({
-        guideRoomIndex: roomIndex - 1,
-        guidePhase: 'room',
+    if (roomIndex > 0 && room) {
+      void persistDraftMutation(draft.id, (latest) => {
+        const latestIndex = latest.rooms.findIndex(
+          (item) => item.id === room.id
+        );
+        if (latestIndex <= 0) {
+          return null;
+        }
+        return {
+          ...latest,
+          guideRoomIndex: latestIndex - 1,
+          guidePhase: 'room',
+          completedAt: undefined,
+        };
       });
       return;
     }
     setScreenStep('checkin');
   };
 
-  const goNextRoomOrFinish = (finish: boolean) => {
+  const goNextRoomOrFinish = () => {
     if (!draft || !room) {
       return;
     }
@@ -431,66 +488,131 @@ export function ManualWalkthrough({
       return;
     }
     setPhotoError(null);
-    if (finish || roomIndex >= draft.rooms.length - 1) {
-      setScreenStep('done');
-      updateGuide({ guidePhase: 'room' });
-      return;
-    }
-    updateGuide({
-      guideRoomIndex: roomIndex + 1,
-      guidePhase: 'room',
-    });
+    void mutateDraftById(draft.id, (latest) => {
+      const latestIndex = latest.rooms.findIndex(
+        (item) => item.id === room.id
+      );
+      if (latestIndex < 0) {
+        return null;
+      }
+      const latestRoom = latest.rooms[latestIndex];
+      const latestBlock = canAdvanceRoom(latestRoom, lidarAvailable);
+      if (latestBlock) {
+        return {
+          draft: latest,
+          value: { block: latestBlock, finished: false },
+        };
+      }
+      const finished = latestIndex >= latest.rooms.length - 1;
+      return {
+        draft: {
+          ...latest,
+          guideRoomIndex: finished ? latestIndex : latestIndex + 1,
+          guidePhase: 'room',
+          completedAt: undefined,
+        },
+        value: { block: null, finished },
+      };
+    })
+      .then((committed) => {
+        if (!committed) {
+          return;
+        }
+        applyCommittedStore(committed.store);
+        if (committed.value.block === 'photo') {
+          setPhotoError(t('photoRequired'));
+        } else if (committed.value.block === 'scan') {
+          setPhotoError(t('scanRequired'));
+        } else if (committed.value.finished) {
+          setScreenStep('done');
+        }
+      })
+      .catch(() => {
+        setHydrateError(t('saveFailed'));
+      });
   };
 
   const skipRoom = () => {
-    if (!draft) {
+    if (!draft || !room) {
       return;
     }
-    if (roomIndex >= draft.rooms.length - 1) {
-      setScreenStep('done');
-      return;
-    }
-    updateGuide({
-      guideRoomIndex: roomIndex + 1,
-      guidePhase: 'room',
-    });
+    void mutateDraftById(draft.id, (latest) => {
+      const latestIndex = latest.rooms.findIndex(
+        (item) => item.id === room.id
+      );
+      if (latestIndex < 0) {
+        return null;
+      }
+      const finished = latestIndex >= latest.rooms.length - 1;
+      return {
+        draft: {
+          ...latest,
+          rooms: latest.rooms.map((item) =>
+            item.id === room.id ? { ...item, skipped: true } : item
+          ),
+          guideRoomIndex: finished ? latestIndex : latestIndex + 1,
+          guidePhase: 'room',
+          completedAt: undefined,
+          verificationStatus: 'unverified',
+        },
+        value: { finished },
+      };
+    })
+      .then((committed) => {
+        if (!committed) {
+          return;
+        }
+        applyCommittedStore(committed.store);
+        if (committed.value.finished) {
+          setScreenStep('done');
+        }
+      })
+      .catch(() => {
+        setHydrateError(t('saveFailed'));
+      });
   };
 
   const addRoom = () => {
     if (!draft) {
       return;
     }
-    persistDraft({
-      ...draft,
-      rooms: [...draft.rooms, createRoom('')],
+    void persistDraftMutation(draft.id, (latest) => ({
+      ...latest,
+      rooms: [...latest.rooms, createRoom('')],
       completedAt: undefined,
       guidePhase: 'room',
-    });
+      verificationStatus: 'unverified',
+    }));
   };
 
   const setCondition = (condition: RoomCondition) => {
-    if (!room) {
+    if (!draft || !room) {
       return;
     }
-    const hasDamage = condition !== 'good';
-    patchRoom({
+    void updateRoomById(draft.id, room.id, (latest) => ({
+      ...latest,
       condition,
-      hasDamage,
-      issueParts: condition === 'good' ? [] : room.issueParts ?? [],
-    });
+      hasDamage: condition !== 'good',
+      issueParts: condition === 'good' ? [] : latest.issueParts ?? [],
+      skipped: false,
+    }));
   };
 
   const togglePart = (part: IssuePartKey) => {
-    if (!room) {
+    if (!draft || !room) {
       return;
     }
-    const current = room.issueParts ?? [];
-    const next = current.includes(part)
-      ? current.filter((item) => item !== part)
-      : [...current, part];
-    patchRoom({
-      issueParts: next,
-      hasDamage: room.condition !== 'good' || next.length > 0,
+    void updateRoomById(draft.id, room.id, (latest) => {
+      const current = latest.issueParts ?? [];
+      const next = current.includes(part)
+        ? current.filter((item) => item !== part)
+        : [...current, part];
+      return {
+        ...latest,
+        issueParts: next,
+        hasDamage: latest.condition !== 'good' || next.length > 0,
+        skipped: false,
+      };
     });
   };
 
@@ -498,18 +620,23 @@ export function ManualWalkthrough({
     if (!draft) {
       return;
     }
-    const verifiedOk = status === 'verified' && draftHasScanMeasure(draft);
-    const finalStatus: VerificationStatus =
-      verifiedOk && lidarAvailable ? 'verified' : 'unverified';
-    const totalMeasured = measuredSqft(draft.rooms);
-    persistDraft({
-      ...draft,
-      completedAt: new Date().toISOString(),
-      verificationStatus: finalStatus,
-      measuredSqftFromScan: totalMeasured > 0 ? totalMeasured : undefined,
+    void persistDraftMutation(draft.id, (latest) => {
+      const verifiedOk =
+        status === 'verified' && draftHasScanMeasure(latest) && lidarAvailable;
+      const totalMeasured = scanMeasuredSqft(latest.rooms);
+      return {
+        ...latest,
+        completedAt: new Date().toISOString(),
+        verificationStatus: verifiedOk ? 'verified' : 'unverified',
+        measuredSqftFromScan:
+          totalMeasured > 0 ? totalMeasured : undefined,
+      };
+    }).then((committed) => {
+      if (committed) {
+        setSavedMessage(t('savedOnDevice'));
+        setScreenStep('done');
+      }
     });
-    setSavedMessage(t('savedOnDevice'));
-    setScreenStep('done');
   };
 
   const scannedCount = draft
@@ -863,9 +990,7 @@ export function ManualWalkthrough({
 
             <GuideButton
               label={nextLabel}
-              onPress={() =>
-                goNextRoomOrFinish(roomIndex >= draft.rooms.length - 1)
-              }
+              onPress={goNextRoomOrFinish}
               accent={theme.accent}
               onAccent={theme.onAccent}
             />
@@ -984,12 +1109,21 @@ export function ManualWalkthrough({
                 <GuideButton
                   label={t('startAnother')}
                   onPress={() => {
-                    if (!store) {
-                      return;
-                    }
-                    persistStore({ ...store, activeDraftId: null });
-                    setScreenStep('checkin');
-                    setSavedMessage(null);
+                    void mutateDraftStore((current) => ({
+                      store: { ...current, activeDraftId: null },
+                      value: undefined,
+                    }))
+                      .then((committed) => {
+                        if (!committed) {
+                          return;
+                        }
+                        applyCommittedStore(committed.store);
+                        setScreenStep('checkin');
+                        setSavedMessage(null);
+                      })
+                      .catch(() => {
+                        setHydrateError(t('saveFailed'));
+                      });
                   }}
                   accent={theme.accent}
                   onAccent={theme.onAccent}

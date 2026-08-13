@@ -1,14 +1,26 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Directory, File, Paths } from 'expo-file-system';
 
-import { parseDraftStoreRaw } from './draft-store-parse';
-import {
-  draftCanBeVerified,
-  normalizeDraftStore,
-} from './walkthrough-schema';
+import { draftCanBeVerified } from './walkthrough-schema';
 import type { RoomScanArtifact } from './walkthrough-schema';
 
 export { isValidDraftStore, parseDraftStoreRaw } from './draft-store-parse';
+export {
+  LEGACY_DRAFT_KEY,
+  STORE_KEY,
+  commitRoomScan,
+  loadDraftStore,
+  markActiveRoomScanned,
+  mutateDraftById,
+  mutateDraftStore,
+} from './draft-store';
+export type {
+  CommitRoomScanInput,
+  CommitRoomScanResult,
+  DraftMutation,
+  DraftStoreMutation,
+  DraftStoreRepository,
+  KeyValueStorage,
+} from './draft-store';
 export {
   draftCanBeVerified,
   normalizeDraftStore,
@@ -86,8 +98,6 @@ export type DraftStore = {
   drafts: Record<string, ManualWalkthroughDraft>;
 };
 
-export const STORE_KEY = 'aperiv.field.walkthrough.drafts.v2';
-export const LEGACY_DRAFT_KEY = 'aperiv.field.walkthrough.draft.v1';
 const PHOTOS_DIR = 'walkthrough-photos';
 
 export const DEFAULT_ROOM_NAMES = ['Living', 'Kitchen', 'Bedroom', 'Bathroom'];
@@ -127,137 +137,6 @@ export function createDraft(
     guidePhase: 'room',
     verificationStatus: 'unverified',
   };
-}
-
-type LegacyRoom = {
-  id: string;
-  name: string;
-  sqft: string;
-  condition: RoomCondition;
-  notes: string;
-};
-
-type LegacyDraft = {
-  unitId: string;
-  unit: string;
-  property: string;
-  recordedSqft: number;
-  rooms: LegacyRoom[];
-  findings: WalkthroughFinding[];
-  completedAt?: string;
-};
-
-function migrateLegacyDraft(legacy: LegacyDraft): ManualWalkthroughDraft {
-  return {
-    id: newId('draft'),
-    property: legacy.property,
-    unit: legacy.unit,
-    recordedSqft: String(legacy.recordedSqft),
-    rooms: legacy.rooms.map((room) => ({
-      id: room.id,
-      name: room.name,
-      sqft: room.sqft,
-      condition: room.condition,
-      photos: [],
-      notes: room.notes,
-      hasDamage: false,
-      scanned: false,
-    })),
-    findings: legacy.findings,
-    createdAt: new Date().toISOString(),
-    completedAt: legacy.completedAt,
-    guideRoomIndex: 0,
-    guidePhase: 'arrive',
-    verificationStatus: legacy.completedAt ? 'unverified' : 'unverified',
-  };
-}
-
-async function loadLegacyStore(): Promise<DraftStore | null> {
-  const legacyRaw = await AsyncStorage.getItem(LEGACY_DRAFT_KEY);
-  if (!legacyRaw) {
-    return null;
-  }
-  try {
-    const legacy = JSON.parse(legacyRaw) as LegacyDraft;
-    if (legacy?.unit && Array.isArray(legacy.rooms)) {
-      const draft = migrateLegacyDraft(legacy);
-      const store: DraftStore = {
-        activeDraftId: draft.id,
-        drafts: { [draft.id]: draft },
-      };
-      await saveDraftStore(store);
-      await AsyncStorage.removeItem(LEGACY_DRAFT_KEY);
-      return store;
-    }
-  } catch {
-    // Unreadable legacy draft — fall through to an empty store.
-  }
-  return null;
-}
-
-export async function loadDraftStore(): Promise<DraftStore> {
-  try {
-    const raw = await AsyncStorage.getItem(STORE_KEY);
-    const parsed = parseDraftStoreRaw(raw);
-    const normalized = normalizeDraftStore(parsed);
-    if (normalized) {
-      return normalized;
-    }
-  } catch {
-    // Corrupt or unreadable v2 — try legacy recovery next.
-  }
-
-  const legacy = await loadLegacyStore();
-  if (legacy) {
-    return legacy;
-  }
-
-  return { activeDraftId: null, drafts: {} };
-}
-
-let saveChain: Promise<void> = Promise.resolve();
-
-export async function saveDraftStore(store: DraftStore): Promise<void> {
-  const write = async () => {
-    await AsyncStorage.setItem(STORE_KEY, JSON.stringify(store));
-  };
-  const next = saveChain.then(write, write);
-  saveChain = next.then(
-    () => undefined,
-    () => undefined
-  );
-  return next;
-}
-
-/** Persist LiDAR success onto the active room while the guide UI is unmounted. */
-export async function markActiveRoomScanned(): Promise<DraftStore | null> {
-  const store = await loadDraftStore();
-  const activeId = store.activeDraftId;
-  if (!activeId) {
-    return null;
-  }
-  const draft = store.drafts[activeId];
-  if (!draft) {
-    return null;
-  }
-  const idx = draft.guideRoomIndex ?? 0;
-  const rooms = draft.rooms.map((room, i) =>
-    i === idx ? { ...room, scanned: true } : room
-  );
-  const next: DraftStore = {
-    activeDraftId: activeId,
-    drafts: {
-      ...store.drafts,
-      [activeId]: {
-        ...draft,
-        rooms,
-        guidePhase: 'condition',
-        completedAt: undefined,
-      },
-    },
-  };
-  await saveDraftStore(next);
-  return next;
 }
 
 function draftPhotosDirectory(draftId: string): Directory {

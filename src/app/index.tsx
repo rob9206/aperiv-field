@@ -1,5 +1,5 @@
-import { Link, router } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { Link, router, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -9,12 +9,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MinTouchTarget, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import {
-  deleteDraftPhotos,
-  loadDraftStore,
-  saveDraftStore,
-  type DraftStore,
-} from '@/lib/walkthrough-draft';
+import { loadDraftStore, mutateDraftStore } from '@/lib/draft-store';
+import { type DraftStore } from '@/lib/walkthrough-draft';
 import { useAuth } from '@/providers/auth-provider';
 import { useLocale } from '@/providers/locale-provider';
 
@@ -31,21 +27,33 @@ export default function HomeScreen() {
     );
   }, []);
 
-  useEffect(() => {
-    if (signedIn) {
-      refreshStore();
-    }
-  }, [signedIn, refreshStore]);
+  useFocusEffect(
+    useCallback(() => {
+      if (signedIn) {
+        refreshStore();
+      }
+    }, [signedIn, refreshStore])
+  );
 
   const onNewJob = () => {
     router.push({ pathname: '/walkthrough', params: { mode: 'new' } });
   };
 
   const onOpenJob = async (id: string) => {
-    const current = store ?? (await loadDraftStore());
-    const next: DraftStore = { ...current, activeDraftId: id };
-    await saveDraftStore(next);
-    setStore(next);
+    const committed = await mutateDraftStore((current) => {
+      if (!Object.prototype.hasOwnProperty.call(current.drafts, id)) {
+        return null;
+      }
+      return {
+        store: { ...current, activeDraftId: id },
+        value: undefined,
+      };
+    });
+    if (!committed) {
+      refreshStore();
+      return;
+    }
+    setStore(committed.store);
     router.push({
       pathname: '/walkthrough',
       params: { mode: 'resume', id },
@@ -53,15 +61,25 @@ export default function HomeScreen() {
   };
 
   const onDeleteJob = async (id: string) => {
-    const current = store ?? (await loadDraftStore());
-    deleteDraftPhotos(id);
-    const { [id]: _removed, ...rest } = current.drafts;
-    const next: DraftStore = {
-      activeDraftId: current.activeDraftId === id ? null : current.activeDraftId,
-      drafts: rest,
-    };
-    await saveDraftStore(next);
-    setStore(next);
+    const committed = await mutateDraftStore((current) => {
+      if (!Object.prototype.hasOwnProperty.call(current.drafts, id)) {
+        return null;
+      }
+      const { [id]: _removed, ...rest } = current.drafts;
+      return {
+        store: {
+          activeDraftId:
+            current.activeDraftId === id ? null : current.activeDraftId,
+          drafts: rest,
+        },
+        value: undefined,
+      };
+    });
+    if (committed) {
+      setStore(committed.store);
+    } else {
+      refreshStore();
+    }
   };
 
   return (
