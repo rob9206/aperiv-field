@@ -107,6 +107,15 @@ export default function WalkthroughScreen() {
     setScanState({ phase: 'ready', scan });
   }, []);
 
+  const resetManualUnverified = useCallback(() => {
+    manualUnverified.current = false;
+    setScanState((current) =>
+      current.phase === 'manual'
+        ? { ...current, manualUnverified: false }
+        : current
+    );
+  }, []);
+
   const saveProcessedScan = useCallback(async () => {
     const scan = activeScan.current;
     if (!scan || !stopRequested.current || exportInFlight.current) {
@@ -354,6 +363,7 @@ export default function WalkthroughScreen() {
             <ManualWalkthrough
               lidarAvailable={scanState.lidarAvailable}
               manualUnverified={scanState.manualUnverified}
+              onStartAnother={resetManualUnverified}
               onOpenLidar={
                 scanState.lidarAvailable
                   ? prepareScan

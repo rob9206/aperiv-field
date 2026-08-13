@@ -56,6 +56,7 @@ type ManualWalkthroughProps = {
   onOpenLidar?: (target: ScanTarget) => void;
   lidarAvailable?: boolean;
   manualUnverified?: boolean;
+  onStartAnother?: () => void;
 };
 
 const CONDITIONS: RoomCondition[] = ['good', 'watch', 'issue'];
@@ -136,6 +137,7 @@ export function ManualWalkthrough({
   onOpenLidar,
   lidarAvailable = false,
   manualUnverified = false,
+  onStartAnother,
 }: ManualWalkthroughProps) {
   const theme = useTheme();
   const { t, locale } = useLocale();
@@ -1127,6 +1129,7 @@ export function ManualWalkthrough({
                 <GuideButton
                   label={t('startAnother')}
                   onPress={() => {
+                    onStartAnother?.();
                     void mutateDraftStore((current) => ({
                       store: { ...current, activeDraftId: null },
                       value: undefined,
