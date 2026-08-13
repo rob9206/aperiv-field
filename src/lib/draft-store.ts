@@ -229,8 +229,15 @@ export function createDraftStoreRepository(
       const roomIndex = draft.rooms.findIndex(
         (room) => room.id === input.roomId
       );
+      const artifactAlreadyUsed = draft.rooms.some(
+        (room, index) =>
+          index !== roomIndex &&
+          (room.scanArtifact?.scanId === input.artifact.scanId ||
+            room.scanArtifact?.jsonPath === input.artifact.jsonPath)
+      );
       if (
         roomIndex < 0 ||
+        artifactAlreadyUsed ||
         !roomHasVerifiedScan({
           scanArtifact: input.artifact,
           skipped: false,
