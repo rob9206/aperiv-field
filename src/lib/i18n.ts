@@ -53,6 +53,7 @@ const en = {
   scanPreparing: 'Preparing room scan…',
   scanProcessing: 'Processing room scan…',
   scanKeepOpen: 'Keep this screen open while RoomPlan builds the model.',
+  scanErrorTitle: 'Room scan issue',
   scanInterrupted: 'Scan interrupted',
   scanMeasureFailed:
     'Scan saved, but sq ft could not be read. Scan the room again.',
@@ -178,6 +179,7 @@ const es: { [K in keyof typeof en]: string } = {
   scanProcessing: 'Procesando el escaneo…',
   scanKeepOpen:
     'Mantén esta pantalla abierta mientras se crea el modelo.',
+  scanErrorTitle: 'Problema con el escaneo',
   scanInterrupted: 'Escaneo interrumpido',
   scanMeasureFailed:
     'Escaneo guardado, pero no se pudieron leer los pies². Escanea la habitación de nuevo.',

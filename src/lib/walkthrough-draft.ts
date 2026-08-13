@@ -1,6 +1,5 @@
 import { Directory, File, Paths } from 'expo-file-system';
 
-import { draftCanBeVerified } from './walkthrough-schema';
 import type { RoomScanArtifact } from './walkthrough-schema';
 
 export { isValidDraftStore, parseDraftStoreRaw } from './draft-store-parse';
@@ -22,6 +21,7 @@ export type {
 } from './draft-store';
 export {
   draftCanBeVerified,
+  legacyCompatibilitySqft,
   normalizeDraftStore,
   roomHasVerifiedScan,
   scanMeasuredSqft,
@@ -180,17 +180,6 @@ export function deleteDraftPhotos(draftId: string): void {
   }
 }
 
-export function measuredSqft(rooms: RoomCapture[]): number {
-  return rooms.reduce((sum, room) => {
-    const fromScan = room.measuredSqftFromScan;
-    if (typeof fromScan === 'number' && Number.isFinite(fromScan)) {
-      return sum + fromScan;
-    }
-    const value = Number.parseFloat(room.sqft);
-    return sum + (Number.isFinite(value) ? value : 0);
-  }, 0);
-}
-
 export function totalPhotos(rooms: RoomCapture[]): number {
   return rooms.reduce((sum, room) => sum + room.photos.length, 0);
 }
@@ -198,8 +187,4 @@ export function totalPhotos(rooms: RoomCapture[]): number {
 export function recordedSqftValue(draft: ManualWalkthroughDraft): number | null {
   const value = Number.parseFloat(draft.recordedSqft);
   return Number.isFinite(value) ? value : null;
-}
-
-export function draftHasScanMeasure(draft: ManualWalkthroughDraft): boolean {
-  return draftCanBeVerified(draft);
 }

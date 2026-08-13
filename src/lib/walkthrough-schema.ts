@@ -290,6 +290,18 @@ export function scanMeasuredSqft(rooms: RoomCapture[]): number {
   );
 }
 
+export function legacyCompatibilitySqft(
+  draft: Pick<ManualWalkthroughDraft, 'rooms' | 'measuredSqftFromScan'>
+): number {
+  if (scanMeasuredSqft(draft.rooms) !== 0) {
+    return 0;
+  }
+  const value = draft.measuredSqftFromScan;
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : 0;
+}
+
 export function draftCanBeVerified(draft: ManualWalkthroughDraft): boolean {
   if (draft.rooms.length === 0) {
     return false;

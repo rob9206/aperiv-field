@@ -164,7 +164,9 @@ export default function WalkthroughScreen() {
         showScanError('scanInterrupted', scan.target);
       }
     } finally {
-      exportInFlight.current = false;
+      if (activeScan.current === scan) {
+        exportInFlight.current = false;
+      }
     }
   }, [enterManual, showScanError]);
 
@@ -405,12 +407,10 @@ export default function WalkthroughScreen() {
 
           {scanState.phase === 'error' && (
             <ThemedView type="backgroundElement" style={styles.card}>
-              <ThemedText type="heading">{t('scanInterrupted')}</ThemedText>
-              {scanState.messageKey !== 'scanInterrupted' ? (
-                <ThemedText type="small" style={{ color: theme.danger }}>
-                  {t(scanState.messageKey)}
-                </ThemedText>
-              ) : null}
+              <ThemedText type="heading">{t('scanErrorTitle')}</ThemedText>
+              <ThemedText type="small" style={{ color: theme.danger }}>
+                {t(scanState.messageKey)}
+              </ThemedText>
               <Pressable
                 accessibilityRole="button"
                 onPress={() => prepareScan(scanState.retryTarget)}

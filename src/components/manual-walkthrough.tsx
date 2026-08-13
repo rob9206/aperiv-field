@@ -33,6 +33,7 @@ import {
   createDraft,
   createRoom,
   draftCanBeVerified,
+  legacyCompatibilitySqft,
   persistPhoto,
   recordedSqftValue,
   roomHasVerifiedScan,
@@ -176,30 +177,10 @@ export function ManualWalkthrough({
     () => (draft ? scanMeasuredSqft(draft.rooms) : 0),
     [draft]
   );
-  const previousUnverifiedMeasured = useMemo(() => {
-    if (!draft) {
-      return 0;
-    }
-    const roomTotal = draft.rooms.reduce((sum, item) => {
-      const value = item.measuredSqftFromScan;
-      return !roomHasVerifiedScan(item) &&
-        typeof value === 'number' &&
-        Number.isFinite(value) &&
-        value > 0
-        ? sum + value
-        : sum;
-    }, 0);
-    if (roomTotal > 0) {
-      return roomTotal;
-    }
-    const draftValue = draft.measuredSqftFromScan;
-    return !draftCanBeVerified(draft) &&
-      typeof draftValue === 'number' &&
-      Number.isFinite(draftValue) &&
-      draftValue > 0
-      ? draftValue
-      : 0;
-  }, [draft]);
+  const previousUnverifiedMeasured = useMemo(
+    () => (draft ? legacyCompatibilitySqft(draft) : 0),
+    [draft]
+  );
   const recorded = draft ? recordedSqftValue(draft) : null;
 
   const inputStyle = {
@@ -355,6 +336,7 @@ export function ManualWalkthrough({
     if (!store || !propertyName.trim() || !unitNumber.trim()) {
       return;
     }
+    onStartAnother?.();
     const next = createDraft(
       propertyName,
       unitNumber,
