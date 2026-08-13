@@ -209,10 +209,6 @@ const es: { [K in keyof typeof en]: string } = {
   roomsScanned: 'Habitaciones escaneadas',
   photosTaken: 'tomadas',
   sqftUnit: 'pies²',
-  scanMeasureFailed:
-    'Escaneo guardado, pero no se pudo leer pies². Escanea de nuevo.',
-  scanDraftMissing:
-    'No se pudo guardar el escaneo en este trabajo. Vuelve a empezar el trabajo.',
 };
 
 export type TranslationKey = keyof typeof en;
