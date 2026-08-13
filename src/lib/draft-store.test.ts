@@ -586,3 +586,58 @@ describe('commitRoomScan', () => {
     assert.equal(saved.drafts.a.rooms[1].scanArtifact, undefined);
   });
 });
+
+describe('completeDraft', () => {
+  it('persists completion before returning the committed store', async () => {
+    const current = draft('a', ['living']);
+    current.rooms[0] = {
+      ...current.rooms[0],
+      scanned: true,
+      scanArtifact: artifact(100),
+      measuredSqftFromScan: 100,
+    };
+    const storage = memoryStorage({
+      [STORE_KEY]: JSON.stringify(store(current)),
+    });
+    const repository = createDraftStoreRepository(storage);
+
+    const committed = await repository.completeDraft({
+      draftId: 'a',
+      requestedStatus: 'verified',
+    });
+
+    assert.ok(committed);
+    assert.equal(committed.store.drafts.a.verificationStatus, 'verified');
+    assert.ok(committed.store.drafts.a.completedAt);
+    assert.equal(committed.store.drafts.a.measuredSqftFromScan, 100);
+    assert.deepEqual(
+      JSON.parse(storage.values.get(STORE_KEY)!),
+      committed.store
+    );
+  });
+
+  it('does not expose saved completion when persistence rejects', async () => {
+    const current = draft('a');
+    const storage = memoryStorage(
+      { [STORE_KEY]: JSON.stringify(store(current)) },
+      {
+        beforeSet() {
+          throw new Error('write failed');
+        },
+      }
+    );
+    const repository = createDraftStoreRepository(storage);
+
+    await assert.rejects(
+      repository.completeDraft({
+        draftId: 'a',
+        requestedStatus: 'unverified',
+      }),
+      /write failed/
+    );
+    assert.equal(
+      JSON.parse(storage.values.get(STORE_KEY)!).drafts.a.completedAt,
+      undefined
+    );
+  });
+});
