@@ -4,10 +4,12 @@ Expo (React Native) app for on-site turnover walkthroughs and capture, shipped t
 
 This is the **mobile** companion to the Next.js web app in [`rob9206/aperiv`](https://github.com/rob9206/aperiv). It is a separate codebase — not a wrapper around the website.
 
+**Tester / end-user guide:** see [HOW_TO_USE.md](./HOW_TO_USE.md) (install, sign-in, room scan, share).
+
 ## Stack
 
 - Expo SDK 57 · Expo Router · TypeScript
-- EAS Build + Submit (`eas.json` profiles: `development`, `preview`, `production`)
+- EAS Build + Submit (`eas.json` profiles: `development`, `internal`, `preview`, `production`)
 - Supabase Auth via `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` (`@supabase/supabase-js` + AsyncStorage session persistence)
 
 ## Local development
@@ -27,16 +29,34 @@ If the phone can't find the server, use a tunnel: `npx expo start --dev-client -
 
 ## Ship to TestFlight
 
-Dev-client builds do **not** work standalone — never submit the `development` profile to TestFlight. Use `preview` or `production` (JS bundle embedded):
+Dev-client builds do **not** work standalone — never submit the `development` profile to TestFlight. Use `preview` or `production` (store distribution, JS bundle embedded):
 
 ```bash
 # one-time: npm install -g eas-cli && eas login && eas init
+git checkout main && git pull
 eas build --platform ios --profile preview
-eas submit --platform ios --profile preview
+eas submit --platform ios --profile preview --latest
 ```
 
+Then in App Store Connect → TestFlight, add testers and share the invite.
+
+### Share via ad-hoc install link (UDID)
+
+Use this when a tester gives you their device UDID instead of using TestFlight:
+
+```bash
+eas device:create
+# choose: register by UDID, name the device, paste the UDID
+
+eas build --platform ios --profile internal --refresh-ad-hoc-provisioning-profile
+```
+
+Send them the install URL from the finished build on expo.dev. Rebuild (or resign) after every new device.
+
 - Bundle ID: `com.aperiv.field`
-- Version bumps: `production` auto-increments via `autoIncrement`.
+- ASC App ID: `6790955096`
+- Version bumps: `preview` and `production` auto-increment build numbers
+- Do **not** resubmit an old build from before RoomPlan — scanning needs a binary built from current `main`
 
 ## Environment
 
@@ -48,4 +68,25 @@ If they're missing or malformed the app runs in a "not configured" placeholder m
 
 - `/` — home, config/signed-in status, sign-out
 - `/login` — email/password via `signInWithPassword`
-- `/walkthrough` — on-site capture (auth-protected): unit selection, room measurements/photos/notes, condition findings, local draft save; LiDAR RoomPlan scan when the device supports it
+- `/walkthrough` — on-site capture (auth-protected): job-list unit entry, one-screen room Ready/photos flow, local draft save; LiDAR RoomPlan scan when the device supports it
+
+## Room scanning (RoomPlan)
+
+Room capture lives in the local Expo module `modules/expo-room-scan` (dependency `expo-room-scan`).
+
+**Requirements**
+
+- Physical LiDAR device (iPhone 12 Pro / later Pro models, or iPad Pro with LiDAR)
+- iOS 16.4+
+- A **native** EAS iOS build that links the module — Expo Go will never work, and an EAS Update / OTA JS push cannot add native code
+
+**If Walkthrough says “New iOS build required”**
+
+The JS bundle is present but `ExpoRoomScan` is missing from the binary. Rebuild and reinstall:
+
+```bash
+eas build --platform ios --profile preview
+eas submit --platform ios --profile preview
+```
+
+Development client alternative: `eas build --platform ios --profile development`, then `npx expo start --dev-client`.

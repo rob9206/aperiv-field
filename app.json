@@ -10,6 +10,7 @@
     "ios": {
       "bundleIdentifier": "com.aperiv.field",
       "supportsTablet": true,
+      "deploymentTarget": "16.4",
       "icon": "./assets/expo.icon",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,

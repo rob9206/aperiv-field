@@ -11,10 +11,16 @@
         "simulator": false
       }
     },
-    "preview": {
+    "internal": {
       "distribution": "internal",
       "channel": "preview",
       "environment": "preview"
+    },
+    "preview": {
+      "distribution": "store",
+      "channel": "preview",
+      "environment": "preview",
+      "autoIncrement": true
     },
     "production": {
       "autoIncrement": true,
@@ -22,10 +28,16 @@
     }
   },
   "submit": {
-    "preview": {},
+    "preview": {
+      "ios": {
+        "ascAppId": "6790955096",
+        "appleTeamId": "94MS8P8TZZ"
+      }
+    },
     "production": {
       "ios": {
-        "ascAppId": "6790955096"
+        "ascAppId": "6790955096",
+        "appleTeamId": "94MS8P8TZZ"
       }
     }
   }
