@@ -74,8 +74,15 @@ export type CompleteDraftResult = {
   store: DraftStore;
 };
 
+export type DraftStoreLoadState = {
+  store: DraftStore;
+  degraded: boolean;
+  recoveryPending: boolean;
+};
+
 export type DraftStoreRepository = {
   loadDraftStore(): Promise<DraftStore>;
+  loadDraftStoreState(): Promise<DraftStoreLoadState>;
   mutateDraftStore<T>(
     mutation: DraftStoreMutation<T>
   ): Promise<{ store: DraftStore; value: T } | null>;
@@ -162,27 +169,41 @@ export function createDraftStoreRepository(
     return normalized;
   }
 
-  async function readUnlocked(): Promise<DraftStore> {
+  async function readStateUnlocked(): Promise<DraftStoreLoadState> {
+    const backupAlreadyExists =
+      (await storage.getItem(STORE_BACKUP_KEY)) !== null;
     const raw = await storage.getItem(STORE_KEY);
     const parsed = parseDraftStoreRaw(raw);
     const normalized = normalizeDraftStore(parsed);
     if (normalized !== null) {
-      if (
+      const degraded =
         raw !== null &&
         parsed !== null &&
         Object.keys(parsed.drafts).length >
-          Object.keys(normalized.drafts).length
-      ) {
+          Object.keys(normalized.drafts).length;
+      if (degraded) {
         await preserveInvalidV2Unlocked(raw);
       }
-      return normalized;
+      return {
+        store: normalized,
+        degraded,
+        recoveryPending: backupAlreadyExists || degraded,
+      };
     }
     if (raw !== null) {
       await preserveInvalidV2Unlocked(raw);
     }
 
     const migrated = await migrateLegacyUnlocked();
-    return migrated ?? EMPTY_STORE;
+    return {
+      store: migrated ?? EMPTY_STORE,
+      degraded: raw !== null,
+      recoveryPending: backupAlreadyExists || raw !== null,
+    };
+  }
+
+  async function readUnlocked(): Promise<DraftStore> {
+    return (await readStateUnlocked()).store;
   }
 
   async function writeUnlocked(store: DraftStore): Promise<DraftStore> {
@@ -205,6 +226,10 @@ export function createDraftStoreRepository(
 
   async function loadDraftStore(): Promise<DraftStore> {
     return enqueue(readUnlocked);
+  }
+
+  async function loadDraftStoreState(): Promise<DraftStoreLoadState> {
+    return enqueue(readStateUnlocked);
   }
 
   async function mutateDraftStore<T>(
@@ -332,6 +357,7 @@ export function createDraftStoreRepository(
 
   return {
     loadDraftStore,
+    loadDraftStoreState,
     mutateDraftStore,
     mutateDraftById,
     commitRoomScan,
@@ -343,6 +369,8 @@ export const draftStoreRepository =
   createDraftStoreRepository(AsyncStorage);
 
 export const loadDraftStore = draftStoreRepository.loadDraftStore;
+export const loadDraftStoreState =
+  draftStoreRepository.loadDraftStoreState;
 export const mutateDraftStore = draftStoreRepository.mutateDraftStore;
 export const mutateDraftById = draftStoreRepository.mutateDraftById;
 export const commitRoomScan = draftStoreRepository.commitRoomScan;

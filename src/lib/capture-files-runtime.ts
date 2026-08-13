@@ -1,4 +1,5 @@
 import { Directory, File, Paths } from 'expo-file-system';
+import { Platform } from 'react-native';
 
 import {
   createCaptureFileLifecycle,
@@ -6,19 +7,10 @@ import {
   type CaptureFileEntry,
 } from './capture-files';
 import { draftStoreRepository } from './draft-store';
-import {
-  newId,
-  type ManualWalkthroughDraft,
-  type RoomPhoto,
-} from './walkthrough-draft';
-import type { RoomScanArtifact } from './walkthrough-schema';
+import { newId, type RoomPhoto } from './walkthrough-draft';
 
 const SCANS_DIR = 'scans';
 const PHOTOS_DIR = 'walkthrough-photos';
-const roots = {
-  scans: new Directory(Paths.document, SCANS_DIR).uri,
-  photos: new Directory(Paths.document, PHOTOS_DIR).uri,
-};
 
 function assertSafeSegment(value: string, label: string): void {
   if (!/^[A-Za-z0-9_-]+$/.test(value)) {
@@ -64,7 +56,13 @@ function copyPhoto(draftId: string, sourceUri: string): RoomPhoto {
 }
 
 export const captureFileService = createCaptureFileService({
-  roots,
+  enabled: Platform.OS !== 'web',
+  getRoots() {
+    return {
+      scans: new Directory(Paths.document, SCANS_DIR).uri,
+      photos: new Directory(Paths.document, PHOTOS_DIR).uri,
+    };
+  },
   copyPhoto,
   deleteFile(uriOrPath) {
     const file = new File(uriOrPath);
@@ -85,17 +83,3 @@ export const captureFileLifecycle = createCaptureFileLifecycle(
   draftStoreRepository,
   captureFileService
 );
-
-export function deleteLocalFile(uriOrPath: string): void {
-  captureFileService.deleteLocalFile(uriOrPath);
-}
-
-export function deleteScanArtifactFiles(artifact: RoomScanArtifact): void {
-  captureFileService.deleteScanArtifactFiles(artifact);
-}
-
-export function deleteDraftCaptureFiles(
-  draft: ManualWalkthroughDraft
-): void {
-  captureFileService.deleteDraftCaptureFiles(draft);
-}

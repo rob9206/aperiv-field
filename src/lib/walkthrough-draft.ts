@@ -7,6 +7,7 @@ export {
   commitRoomScan,
   completeDraft,
   loadDraftStore,
+  loadDraftStoreState,
   mutateDraftById,
   mutateDraftStore,
 } from './draft-store';
@@ -16,6 +17,7 @@ export type {
   CompleteDraftInput,
   CompleteDraftResult,
   DraftMutation,
+  DraftStoreLoadState,
   DraftStoreMutation,
   DraftStoreRepository,
   KeyValueStorage,

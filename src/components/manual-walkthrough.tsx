@@ -278,6 +278,10 @@ export function ManualWalkthrough({
     storeRef.current = store;
   }, [store]);
 
+  useEffect(() => {
+    setShareError(null);
+  }, [draft?.id, room?.id, screenStep]);
+
   const applyCommittedStore = (next: DraftStore) => {
     storeRef.current = next;
     setStore(next);
@@ -1184,7 +1188,7 @@ export function ManualWalkthrough({
               <>
                 {canSaveVerified ? (
                   <GuideButton
-                    label={isSaving ? t('loading') : t('saveVerified')}
+                    label={isSaving ? t('saving') : t('saveVerified')}
                     onPress={() => {
                       void saveJob('verified');
                     }}
@@ -1196,7 +1200,7 @@ export function ManualWalkthrough({
                 <GuideButton
                   label={
                     isSaving
-                      ? t('loading')
+                      ? t('saving')
                       : canSaveVerified
                         ? t('saveJob')
                         : t('saveUnverified')

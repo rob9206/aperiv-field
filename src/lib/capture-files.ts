@@ -21,7 +21,8 @@ export type CaptureFileEntry = {
 };
 
 export type CaptureFileAdapter = {
-  roots: CaptureRoots;
+  enabled: boolean;
+  getRoots(): CaptureRoots;
   copyPhoto(draftId: string, sourceUri: string): RoomPhoto;
   deleteFile(uriOrPath: string): void;
   deleteDirectory(uriOrPath: string): void;
@@ -182,16 +183,30 @@ export function planOrphanSweep(
 }
 
 export function createCaptureFileService(adapter: CaptureFileAdapter) {
-  const roots = adapter.roots;
-  const ownedRoots = canonicalRoots(roots);
+  function enabledRoots(): CaptureRoots | null {
+    if (!adapter.enabled) {
+      return null;
+    }
+    try {
+      return adapter.getRoots();
+    } catch {
+      return null;
+    }
+  }
 
-  function isOwned(uriOrPath: string): boolean {
+  function isOwned(
+    uriOrPath: string,
+    ownedRoots: readonly string[]
+  ): boolean {
     const canonical = canonicalLocalPath(uriOrPath);
     return canonical !== null && isOwnedDescendant(canonical, ownedRoots);
   }
 
-  function deleteLocalFile(uriOrPath: string): void {
-    if (!isOwned(uriOrPath)) {
+  function deleteOwnedFile(
+    uriOrPath: string,
+    ownedRoots: readonly string[]
+  ): void {
+    if (!isOwned(uriOrPath, ownedRoots)) {
       return;
     }
     try {
@@ -201,8 +216,11 @@ export function createCaptureFileService(adapter: CaptureFileAdapter) {
     }
   }
 
-  function deleteLocalDirectory(uriOrPath: string): void {
-    if (!isOwned(uriOrPath)) {
+  function deleteOwnedDirectory(
+    uriOrPath: string,
+    ownedRoots: readonly string[]
+  ): void {
+    if (!isOwned(uriOrPath, ownedRoots)) {
       return;
     }
     try {
@@ -212,32 +230,30 @@ export function createCaptureFileService(adapter: CaptureFileAdapter) {
     }
   }
 
-  function deleteScanArtifactFiles(artifact: RoomScanArtifact): void {
-    for (const path of scanPathsForArtifact(artifact)) {
-      deleteLocalFile(path);
-    }
-  }
-
-  function deleteDraftCaptureFiles(draft: ManualWalkthroughDraft): void {
-    for (const path of capturePathsForDraft(draft)) {
-      deleteLocalFile(path);
-    }
-  }
-
   function deleteUnreferenced(
     candidates: readonly string[],
     committedStore: DraftStore
   ): void {
+    const roots = enabledRoots();
+    if (roots === null) {
+      return;
+    }
+    const ownedRoots = canonicalRoots(roots);
     for (const path of planUnreferencedCapturePaths(
       candidates,
       committedStore,
       roots
     )) {
-      deleteLocalFile(path);
+      deleteOwnedFile(path, ownedRoots);
     }
   }
 
   function sweepOrphans(committedStore: DraftStore): void {
+    const roots = enabledRoots();
+    if (roots === null) {
+      return;
+    }
+    const ownedRoots = canonicalRoots(roots);
     const entries: CaptureFileEntry[] = [];
     for (const root of [roots.scans, roots.photos]) {
       try {
@@ -248,23 +264,24 @@ export function createCaptureFileService(adapter: CaptureFileAdapter) {
     }
     const plan = planOrphanSweep(committedStore, roots, entries);
     for (const path of plan.deleteFiles) {
-      deleteLocalFile(path);
+      deleteOwnedFile(path, ownedRoots);
     }
     for (const path of [...plan.deleteDirectories].sort(
       (left, right) =>
         (canonicalLocalPath(right)?.split('/').length ?? 0) -
         (canonicalLocalPath(left)?.split('/').length ?? 0)
     )) {
-      deleteLocalDirectory(path);
+      deleteOwnedDirectory(path, ownedRoots);
     }
   }
 
   return {
-    roots,
-    copyPhoto: adapter.copyPhoto,
-    deleteLocalFile,
-    deleteScanArtifactFiles,
-    deleteDraftCaptureFiles,
+    copyPhoto(draftId: string, sourceUri: string): RoomPhoto {
+      if (!adapter.enabled) {
+        throw new Error('Local capture files are unavailable on this platform.');
+      }
+      return adapter.copyPhoto(draftId, sourceUri);
+    },
     deleteUnreferenced,
     sweepOrphans,
   };
@@ -277,6 +294,7 @@ export function createCaptureFileLifecycle(
   files: CaptureFileService
 ) {
   let operationChain: Promise<void> = Promise.resolve();
+  let automaticSweepRequested = false;
 
   function enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const queued = operationChain.then(operation, operation);
@@ -289,10 +307,26 @@ export function createCaptureFileLifecycle(
 
   async function cleanAgainstLatest(candidates: readonly string[]) {
     try {
-      const current = await repository.loadDraftStore();
-      files.deleteUnreferenced(candidates, current);
+      const state = await repository.loadDraftStoreState();
+      if (state.degraded || state.recoveryPending) {
+        return;
+      }
+      files.deleteUnreferenced(candidates, state.store);
     } catch {
       // Without committed truth it is not safe to delete; sweep can recover.
+    }
+  }
+
+  async function runTrustedSweep(): Promise<boolean> {
+    try {
+      const state = await repository.loadDraftStoreState();
+      if (state.degraded || state.recoveryPending) {
+        return false;
+      }
+      files.sweepOrphans(state.store);
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -312,9 +346,7 @@ export function createCaptureFileLifecycle(
           copied.push(files.copyPhoto(input.draftId, sourceUri));
         }
       } catch (error) {
-        for (const current of copied) {
-          files.deleteLocalFile(current.uri);
-        }
+        await cleanAgainstLatest(copied.map((current) => current.uri));
         throw error;
       }
 
@@ -399,10 +431,7 @@ export function createCaptureFileLifecycle(
         }
       );
       if (committed !== null) {
-        files.deleteUnreferenced(
-          [committed.value.uri],
-          committed.store
-        );
+        await cleanAgainstLatest([committed.value.uri]);
       }
       return committed;
     });
@@ -430,10 +459,8 @@ export function createCaptureFileLifecycle(
       if (committed === null) {
         return null;
       }
-      files.deleteUnreferenced(
-        capturePathsForDraft(committed.value),
-        committed.store
-      );
+      await cleanAgainstLatest(capturePathsForDraft(committed.value));
+      await runTrustedSweep();
       return {
         store: committed.store,
         deleted: committed.value,
@@ -457,9 +484,8 @@ export function createCaptureFileLifecycle(
         return null;
       }
       if (committed.replaced) {
-        files.deleteUnreferenced(
-          scanPathsForArtifact(committed.replaced),
-          committed.store
+        await cleanAgainstLatest(
+          scanPathsForArtifact(committed.replaced)
         );
       }
       return committed;
@@ -472,11 +498,14 @@ export function createCaptureFileLifecycle(
     );
   }
 
-  function sweepOrphans() {
-    return enqueue(async () => {
-      const committed = await repository.loadDraftStore();
-      files.sweepOrphans(committed);
-    });
+  function sweepOrphans(options: { force?: boolean } = {}) {
+    if (!options.force) {
+      if (automaticSweepRequested) {
+        return Promise.resolve(false);
+      }
+      automaticSweepRequested = true;
+    }
+    return enqueue(runTrustedSweep);
   }
 
   return {
