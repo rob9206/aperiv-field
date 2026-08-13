@@ -1,5 +1,4 @@
 import type { RoomCapture } from '@/lib/walkthrough-draft';
-// @ts-expect-error Node's strip-types test runner requires the explicit extension.
 import { roomHasVerifiedScan } from './walkthrough-schema.ts';
 
 export type RoomAdvanceBlock = 'ok' | 'photo' | 'scan';

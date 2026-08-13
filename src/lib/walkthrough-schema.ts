@@ -9,6 +9,10 @@ import type {
   VerificationStatus,
   WalkthroughFinding,
 } from './walkthrough-draft';
+import {
+  MAX_VERIFIED_ROOM_SQFT,
+  MIN_VERIFIED_ROOM_SQFT,
+} from './roomplan-measure.ts';
 
 export type ScanMeasurementSource =
   | 'roomplan-floor-polygon'
@@ -61,7 +65,41 @@ function isFiniteNumber(value: unknown): value is number {
 }
 
 function isDateString(value: unknown): value is string {
-  return typeof value === 'string' && Number.isFinite(Date.parse(value));
+  if (typeof value !== 'string') {
+    return false;
+  }
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
+}
+
+function isSafeScanId(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.trim() === value &&
+    value !== '.' &&
+    value !== '..' &&
+    !value.includes('\0') &&
+    !/[\\/]/.test(value)
+  );
+}
+
+function isSafeArtifactPath(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.trim() === value &&
+    !value.includes('\0') &&
+    !value.split(/[\\/]/).includes('..')
+  );
+}
+
+function isValidMeasuredSqft(value: unknown): value is number {
+  return (
+    isFiniteNumber(value) &&
+    value >= MIN_VERIFIED_ROOM_SQFT &&
+    value <= MAX_VERIFIED_ROOM_SQFT
+  );
 }
 
 function normalizePhoto(value: unknown): RoomPhoto | null {
@@ -93,10 +131,10 @@ function normalizeFinding(value: unknown): WalkthroughFinding | null {
 function normalizeScanArtifact(value: unknown): RoomScanArtifact | null {
   if (
     !isRecord(value) ||
-    typeof value.scanId !== 'string' ||
-    typeof value.jsonPath !== 'string' ||
-    typeof value.usdzPath !== 'string' ||
-    !isFiniteNumber(value.measuredSqft) ||
+    !isSafeScanId(value.scanId) ||
+    !isSafeArtifactPath(value.jsonPath) ||
+    !isSafeArtifactPath(value.usdzPath) ||
+    !isValidMeasuredSqft(value.measuredSqft) ||
     typeof value.source !== 'string' ||
     !SCAN_SOURCES.has(value.source as ScanMeasurementSource) ||
     !isDateString(value.capturedAt)
@@ -127,40 +165,24 @@ function normalizeRoom(value: unknown): RoomCapture | null {
     return null;
   }
 
-  const photos = value.photos.map(normalizePhoto);
-  if (photos.some((photo) => photo === null)) {
-    return null;
-  }
-  if (value.hasDamage !== undefined && typeof value.hasDamage !== 'boolean') {
-    return null;
-  }
-  if (
-    value.issueParts !== undefined &&
-    (!Array.isArray(value.issueParts) ||
-      !value.issueParts.every((part) => typeof part === 'string'))
-  ) {
-    return null;
-  }
-  if (value.scanned !== undefined && typeof value.scanned !== 'boolean') {
-    return null;
-  }
-  if (value.skipped !== undefined && typeof value.skipped !== 'boolean') {
-    return null;
-  }
-  if (
-    value.measuredSqftFromScan !== undefined &&
-    !isFiniteNumber(value.measuredSqftFromScan)
-  ) {
-    return null;
-  }
+  const photos = value.photos
+    .map(normalizePhoto)
+    .filter((photo): photo is RoomPhoto => photo !== null);
+  const hasDamage =
+    typeof value.hasDamage === 'boolean' ? value.hasDamage : false;
+  const issueParts =
+    Array.isArray(value.issueParts) &&
+    value.issueParts.every((part) => typeof part === 'string')
+      ? ([...value.issueParts] as string[])
+      : [];
+  const skipped = typeof value.skipped === 'boolean' ? value.skipped : false;
 
   let scanArtifact: RoomScanArtifact | undefined;
   if (value.scanArtifact !== undefined) {
     const normalized = normalizeScanArtifact(value.scanArtifact);
-    if (normalized === null) {
-      return null;
+    if (normalized !== null) {
+      scanArtifact = normalized;
     }
-    scanArtifact = normalized;
   }
 
   return {
@@ -168,18 +190,16 @@ function normalizeRoom(value: unknown): RoomCapture | null {
     name: value.name,
     sqft: value.sqft,
     condition: value.condition as RoomCondition,
-    photos: photos as RoomPhoto[],
+    photos,
     notes: value.notes,
-    ...(value.hasDamage === undefined ? {} : { hasDamage: value.hasDamage }),
-    ...(value.issueParts === undefined
-      ? {}
-      : { issueParts: [...value.issueParts] as string[] }),
+    hasDamage,
+    issueParts,
     scanned: scanArtifact !== undefined,
-    ...(value.skipped === undefined ? {} : { skipped: value.skipped }),
+    skipped,
     ...(scanArtifact === undefined ? {} : { scanArtifact }),
-    ...(value.measuredSqftFromScan === undefined
-      ? {}
-      : { measuredSqftFromScan: value.measuredSqftFromScan }),
+    ...(isFiniteNumber(value.measuredSqftFromScan)
+      ? { measuredSqftFromScan: value.measuredSqftFromScan }
+      : {}),
   };
 }
 
@@ -189,7 +209,7 @@ function normalizeDraft(
 ): ManualWalkthroughDraft | null {
   if (
     !isRecord(value) ||
-    value.id !== expectedId ||
+    typeof value.id !== 'string' ||
     typeof value.property !== 'string' ||
     typeof value.unit !== 'string' ||
     typeof value.recordedSqft !== 'string' ||
@@ -201,34 +221,10 @@ function normalizeDraft(
   }
 
   const rooms = value.rooms.map(normalizeRoom);
-  const findings = value.findings.map(normalizeFinding);
-  if (
-    rooms.some((room) => room === null) ||
-    findings.some((finding) => finding === null)
-  ) {
-    return null;
-  }
-  if (value.completedAt !== undefined && !isDateString(value.completedAt)) {
-    return null;
-  }
-  if (
-    value.guidePhase !== undefined &&
-    (typeof value.guidePhase !== 'string' ||
-      !GUIDE_PHASES.has(value.guidePhase as GuidePhase))
-  ) {
-    return null;
-  }
-  if (
-    value.measuredSqftFromScan !== undefined &&
-    !isFiniteNumber(value.measuredSqftFromScan)
-  ) {
-    return null;
-  }
-  if (
-    value.verificationStatus !== undefined &&
-    (typeof value.verificationStatus !== 'string' ||
-      !VERIFICATION_STATUSES.has(value.verificationStatus as VerificationStatus))
-  ) {
+  const findings = value.findings
+    .map(normalizeFinding)
+    .filter((finding): finding is WalkthroughFinding => finding !== null);
+  if (rooms.some((room) => room === null)) {
     return null;
   }
 
@@ -241,21 +237,31 @@ function normalizeDraft(
       ? value.guideRoomIndex
       : 0;
   const verificationStatus =
-    (value.verificationStatus as VerificationStatus | undefined) ?? 'unverified';
+    typeof value.verificationStatus === 'string' &&
+    VERIFICATION_STATUSES.has(value.verificationStatus as VerificationStatus)
+      ? (value.verificationStatus as VerificationStatus)
+      : 'unverified';
+  const guidePhase =
+    typeof value.guidePhase === 'string' &&
+    GUIDE_PHASES.has(value.guidePhase as GuidePhase)
+      ? (value.guidePhase as GuidePhase)
+      : 'room';
   const draft: ManualWalkthroughDraft = {
-    id: value.id,
+    id: expectedId,
     property: value.property,
     unit: value.unit,
     recordedSqft: value.recordedSqft,
     rooms: normalizedRooms,
-    findings: findings as WalkthroughFinding[],
+    findings,
     createdAt: value.createdAt,
-    ...(value.completedAt === undefined ? {} : { completedAt: value.completedAt }),
+    ...(isDateString(value.completedAt)
+      ? { completedAt: value.completedAt }
+      : {}),
     guideRoomIndex,
-    guidePhase: (value.guidePhase as GuidePhase | undefined) ?? 'room',
-    ...(value.measuredSqftFromScan === undefined
-      ? {}
-      : { measuredSqftFromScan: value.measuredSqftFromScan }),
+    guidePhase,
+    ...(isFiniteNumber(value.measuredSqftFromScan)
+      ? { measuredSqftFromScan: value.measuredSqftFromScan }
+      : {}),
     verificationStatus,
   };
   draft.verificationStatus = draftCanBeVerified(draft)
@@ -267,13 +273,12 @@ function normalizeDraft(
 export function roomHasVerifiedScan(
   room: Pick<RoomCapture, 'scanArtifact' | 'skipped'>
 ): boolean {
-  const artifact = room.scanArtifact;
+  const artifact = normalizeScanArtifact(room.scanArtifact);
   return (
     room.skipped !== true &&
     artifact != null &&
     VERIFIED_SOURCES.has(artifact.source) &&
-    Number.isFinite(artifact.measuredSqft) &&
-    artifact.measuredSqft > 0
+    isValidMeasuredSqft(artifact.measuredSqft)
   );
 }
 
@@ -286,7 +291,23 @@ export function scanMeasuredSqft(rooms: RoomCapture[]): number {
 }
 
 export function draftCanBeVerified(draft: ManualWalkthroughDraft): boolean {
-  return draft.rooms.length > 0 && draft.rooms.every(roomHasVerifiedScan);
+  if (draft.rooms.length === 0) {
+    return false;
+  }
+  const scanIds = new Set<string>();
+  const jsonPaths = new Set<string>();
+  for (const room of draft.rooms) {
+    if (!roomHasVerifiedScan(room)) {
+      return false;
+    }
+    const artifact = room.scanArtifact!;
+    if (scanIds.has(artifact.scanId) || jsonPaths.has(artifact.jsonPath)) {
+      return false;
+    }
+    scanIds.add(artifact.scanId);
+    jsonPaths.add(artifact.jsonPath);
+  }
+  return true;
 }
 
 export function normalizeDraftStore(value: unknown): DraftStore | null {
@@ -294,6 +315,7 @@ export function normalizeDraftStore(value: unknown): DraftStore | null {
     return null;
   }
   if (
+    value.activeDraftId !== undefined &&
     value.activeDraftId !== null &&
     typeof value.activeDraftId !== 'string'
   ) {
