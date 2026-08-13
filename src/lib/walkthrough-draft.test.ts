@@ -7,6 +7,7 @@ import {
 } from './draft-store-parse.ts';
 import {
   draftCanBeVerified,
+  legacyCompatibilitySqft,
   scanMeasuredSqft,
   type RoomScanArtifact,
 } from './walkthrough-schema.ts';
@@ -125,6 +126,27 @@ describe('scan verification', () => {
       { ...createRoom('B'), sqft: '500' },
     ];
     assert.equal(scanMeasuredSqft(rooms), 100);
+  });
+
+  it('does not repeat a partial current scan as a legacy fallback', () => {
+    const draft = {
+      ...createDraft('Oak', '1A', '1000', ['Living', 'Kitchen']),
+      measuredSqftFromScan: 100,
+    };
+    draft.rooms[0].scanArtifact = artifact(100);
+
+    assert.equal(scanMeasuredSqft(draft.rooms), 100);
+    assert.equal(legacyCompatibilitySqft(draft), 0);
+  });
+
+  it('returns a compatibility-only legacy value when no current scan exists', () => {
+    const draft = {
+      ...createDraft('Oak', '1A', '1000', ['Living']),
+      measuredSqftFromScan: 125,
+    };
+
+    assert.equal(scanMeasuredSqft(draft.rooms), 0);
+    assert.equal(legacyCompatibilitySqft(draft), 125);
   });
 
   it('rejects wall estimates for verification', () => {

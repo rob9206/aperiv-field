@@ -23,6 +23,8 @@ describe('t', () => {
   });
 
   it('localizes scan failures and the unverified escape hatch', () => {
+    assert.equal(t('en', 'scanErrorTitle'), 'Room scan issue');
+    assert.equal(t('es', 'scanErrorTitle'), 'Problema con el escaneo');
     assert.equal(t('en', 'scanMeasureFailed').includes('sq ft'), true);
     assert.equal(t('es', 'scanMeasureFailed').includes('pies²'), true);
     assert.equal(t('en', 'continueUnverified'), 'Continue unverified');
