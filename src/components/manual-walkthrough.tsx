@@ -21,6 +21,7 @@ import {
   canAdvanceRoom,
   ISSUE_PART_KEYS,
   type IssuePartKey,
+  type RoomAdvanceBlock,
 } from '@/lib/guide-steps';
 import { defaultRoomNames, type TranslationKey } from '@/lib/i18n';
 import {
@@ -179,7 +180,7 @@ export function ManualWalkthrough({
         let nextStep: ScreenStep = 'checkin';
 
         if (params.mode === 'resume' && params.id) {
-          const selected = await mutateDraftStore((current) => {
+          const selected = await mutateDraftStore<ScreenStep>((current) => {
             const target = current.drafts[params.id!];
             if (!target) {
               return null;
@@ -192,7 +193,7 @@ export function ManualWalkthrough({
           next = selected?.store ?? (await loadDraftStore());
           nextStep = selected?.value ?? 'checkin';
         } else if (params.mode === 'new') {
-          const selected = await mutateDraftStore((current) => {
+          const selected = await mutateDraftStore<ScreenStep>((current) => {
             const activeId = current.activeDraftId;
             const active = activeId ? current.drafts[activeId] : null;
             const inProgress =
@@ -488,7 +489,10 @@ export function ManualWalkthrough({
       return;
     }
     setPhotoError(null);
-    void mutateDraftById(draft.id, (latest) => {
+    void mutateDraftById<{
+      block: RoomAdvanceBlock;
+      finished: boolean;
+    }>(draft.id, (latest) => {
       const latestIndex = latest.rooms.findIndex(
         (item) => item.id === room.id
       );
@@ -497,7 +501,7 @@ export function ManualWalkthrough({
       }
       const latestRoom = latest.rooms[latestIndex];
       const latestBlock = canAdvanceRoom(latestRoom, lidarAvailable);
-      if (latestBlock) {
+      if (latestBlock !== 'ok') {
         return {
           draft: latest,
           value: { block: latestBlock, finished: false },
@@ -511,7 +515,7 @@ export function ManualWalkthrough({
           guidePhase: 'room',
           completedAt: undefined,
         },
-        value: { block: null, finished },
+        value: { block: 'ok', finished },
       };
     })
       .then((committed) => {
