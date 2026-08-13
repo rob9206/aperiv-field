@@ -1,27 +1,15 @@
 import type { RoomCapture } from '@/lib/walkthrough-draft';
+import { roomHasVerifiedScan } from './walkthrough-schema.ts';
 
 export type RoomAdvanceBlock = 'ok' | 'photo' | 'scan';
 
-function roomHasScanMeasure(
-  room: Pick<RoomCapture, 'scanned' | 'measuredSqftFromScan'>
-): boolean {
-  return (
-    typeof room.measuredSqftFromScan === 'number' &&
-    Number.isFinite(room.measuredSqftFromScan) &&
-    room.measuredSqftFromScan > 0
-  );
-}
-
 /** Whether the current room can advance (Next / Finish). */
 export function canAdvanceRoom(
-  room: Pick<RoomCapture, 'photos' | 'scanned' | 'measuredSqftFromScan'>,
-  lidarAvailable: boolean
+  room: Pick<RoomCapture, 'photos' | 'scanArtifact' | 'skipped'>,
+  lidarRequired: boolean
 ): RoomAdvanceBlock {
   if (room.photos.length < 1) return 'photo';
-  // LiDAR path needs a real measured sq ft, not only a scanned checkmark.
-  if (lidarAvailable && !(room.scanned && roomHasScanMeasure(room))) {
-    return 'scan';
-  }
+  if (lidarRequired && !roomHasVerifiedScan(room)) return 'scan';
   return 'ok';
 }
 

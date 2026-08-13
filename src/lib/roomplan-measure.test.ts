@@ -1,162 +1,118 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
 import {
   SQM_TO_SQFT,
-  convexHullXZ,
-  measuredSqftFromExportFields,
-  measuredSqftFromRoomPlanJson,
-  wallFootprintAreaM2,
+  parseVerifiedRoomPlanMeasurement,
 } from './roomplan-measure.ts';
 
-function wallTransform(centerX: number, centerZ: number, axisX: number, axisZ: number) {
-  // Column-major identity with custom X axis (length) and translation.
-  return [
-    axisX,
-    0,
-    axisZ,
-    0,
-    0,
-    1,
-    0,
-    0,
-    -axisZ,
-    0,
-    axisX,
-    0,
-    centerX,
-    0,
-    centerZ,
-    1,
-  ];
-}
+const fixture = JSON.parse(
+  readFileSync(
+    new URL('./fixtures/roomplan-ios17-floor.json', import.meta.url),
+    'utf8'
+  )
+) as unknown;
 
-describe('measuredSqftFromRoomPlanJson', () => {
-  it('returns null for missing floors and walls', () => {
-    assert.equal(measuredSqftFromRoomPlanJson(null), null);
-    assert.equal(measuredSqftFromRoomPlanJson({}), null);
-    assert.equal(measuredSqftFromRoomPlanJson({ floors: [] }), null);
+describe('parseVerifiedRoomPlanMeasurement', () => {
+  it('reads a real iOS 17 floor polygon', () => {
+    const result = parseVerifiedRoomPlanMeasurement(fixture);
+    assert.equal(result?.source, 'roomplan-floor-polygon');
+    assert.ok(result);
+    assert.ok(Math.abs(result.measuredSqft - 20 * SQM_TO_SQFT) < 0.01);
   });
 
-  it('uses floor dimensions (meters) and converts to sq ft', () => {
-    // 4m x 5m = 20 m² ≈ 215.3 ft²
-    const sqft = measuredSqftFromRoomPlanJson({
-      floors: [{ dimensions: [4, 0, 5] }],
+  it('falls back to valid floor dimensions', () => {
+    const result = parseVerifiedRoomPlanMeasurement({
+      floors: [{ dimensions: [3, 4, 0], polygonCorners: [] }],
     });
-    assert.ok(sqft != null);
-    assert.ok(Math.abs(sqft - 20 * SQM_TO_SQFT) < 0.01);
+    assert.equal(result?.source, 'roomplan-floor-dimensions');
+    assert.ok(result);
+    assert.ok(Math.abs(result.measuredSqft - 12 * SQM_TO_SQFT) < 0.01);
   });
 
-  it('sums multiple floors', () => {
-    const sqft = measuredSqftFromRoomPlanJson({
-      floors: [{ dimensions: [2, 0, 3] }, { dimensions: [4, 0, 5] }],
-    });
-    assert.ok(sqft != null);
-    assert.ok(Math.abs(sqft - 26 * SQM_TO_SQFT) < 0.01);
-  });
-
-  it('prefers polygonCorners shoelace area when present', () => {
-    // Unit square in XZ → 1 m²
-    const sqft = measuredSqftFromRoomPlanJson({
+  it('falls back to dimensions when a nearly constant polygon axis is noisy', () => {
+    const result = parseVerifiedRoomPlanMeasurement({
       floors: [
         {
-          dimensions: [10, 0, 10],
+          dimensions: [3, 4, 0],
           polygonCorners: [
             [0, 0, 0],
-            [1, 0, 0],
+            [4, 0.000001, 0],
+            [4, -0.000001, 3],
+            [0, 0.000002, 3],
+          ],
+        },
+      ],
+    });
+
+    assert.equal(result?.source, 'roomplan-floor-dimensions');
+    assert.ok(result);
+    assert.ok(Math.abs(result.measuredSqft - 12 * SQM_TO_SQFT) < 0.01);
+  });
+
+  it('falls back to dimensions when polygon corners have zero area', () => {
+    const result = parseVerifiedRoomPlanMeasurement({
+      floors: [
+        {
+          dimensions: [3, 4, 0],
+          polygonCorners: [
+            [0, 0, 0],
             [1, 0, 1],
-            [0, 0, 1],
+            [2, 0, 2],
           ],
         },
       ],
     });
-    assert.ok(sqft != null);
-    assert.ok(Math.abs(sqft - SQM_TO_SQFT) < 0.01);
+
+    assert.equal(result?.source, 'roomplan-floor-dimensions');
+    assert.ok(result);
+    assert.ok(Math.abs(result.measuredSqft - 12 * SQM_TO_SQFT) < 0.01);
   });
 
-  it('handles local-plane XY polygon corners', () => {
-    const sqft = measuredSqftFromRoomPlanJson({
-      floors: [
-        {
-          polygonCorners: [
-            [0, 0, 0],
-            [2, 0, 0],
-            [2, 3, 0],
-            [0, 3, 0],
-          ],
-        },
-      ],
-    });
-    assert.ok(sqft != null);
-    assert.ok(Math.abs(sqft - 6 * SQM_TO_SQFT) < 0.01);
-  });
-
-  it('falls back to wall footprint when floors are missing (iOS 16)', () => {
-    // 4m x 3m rectangle from four walls.
-    const walls = [
-      {
-        dimensions: [4, 2.4, 0],
-        transform: wallTransform(0, -1.5, 1, 0),
-      },
-      {
-        dimensions: [4, 2.4, 0],
-        transform: wallTransform(0, 1.5, 1, 0),
-      },
-      {
-        dimensions: [3, 2.4, 0],
-        transform: wallTransform(-2, 0, 0, 1),
-      },
-      {
-        dimensions: [3, 2.4, 0],
-        transform: wallTransform(2, 0, 0, 1),
-      },
-    ];
-    const sqft = measuredSqftFromRoomPlanJson({ walls });
-    assert.ok(sqft != null);
-    assert.ok(Math.abs(sqft - 12 * SQM_TO_SQFT) < 0.2);
-  });
-});
-
-describe('wallFootprintAreaM2 / convexHullXZ', () => {
-  it('builds a hull for a square', () => {
-    const hull = convexHullXZ([
-      { x: 0, z: 0 },
-      { x: 1, z: 0 },
-      { x: 1, z: 1 },
-      { x: 0, z: 1 },
-      { x: 0.5, z: 0.5 },
-    ]);
-    assert.equal(hull.length, 4);
-  });
-
-  it('returns 0 for empty walls', () => {
-    assert.equal(wallFootprintAreaM2([]), 0);
-    assert.equal(wallFootprintAreaM2(null), 0);
-  });
-});
-
-describe('measuredSqftFromExportFields', () => {
-  it('prefers areaSquareFeet when valid', () => {
+  it('rejects a bad polygon when dimensions are also invalid', () => {
     assert.equal(
-      measuredSqftFromExportFields({
-        areaSquareFeet: '215.3',
-        areaSquareMeters: '99',
+      parseVerifiedRoomPlanMeasurement({
+        floors: [
+          {
+            dimensions: [4, 0, 0],
+            polygonCorners: [
+              [0, 0, 0],
+              [1, 0, 1],
+              [2, 0, 2],
+            ],
+          },
+        ],
       }),
-      215.3
-    );
-  });
-
-  it('falls back to areaSquareMeters', () => {
-    const sqft = measuredSqftFromExportFields({ areaSquareMeters: 10 });
-    assert.ok(sqft != null);
-    assert.ok(Math.abs(sqft - 10 * SQM_TO_SQFT) < 0.01);
-  });
-
-  it('returns null when both are missing/invalid', () => {
-    assert.equal(measuredSqftFromExportFields({}), null);
-    assert.equal(
-      measuredSqftFromExportFields({ areaSquareFeet: 'nope' }),
       null
     );
+  });
+
+  it('does not verify from walls', () => {
+    assert.equal(
+      parseVerifiedRoomPlanMeasurement({
+        walls: [
+          {
+            dimensions: [4, 2.4, 0],
+            transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+          },
+        ],
+      }),
+      null
+    );
+  });
+
+  it('rejects malformed and implausible values', () => {
+    for (const value of [
+      null,
+      {},
+      { floors: [] },
+      { floors: [{ dimensions: [true, 4, 0] }] },
+      { floors: [{ dimensions: [Number.MIN_VALUE, 4, 0] }] },
+      { floors: [{ dimensions: [2_000, 2_000, 0] }] },
+      { floors: [{ polygonCorners: [[0, 0, 0], [1, 0, 0]] }] },
+    ]) {
+      assert.equal(parseVerifiedRoomPlanMeasurement(value), null);
+    }
   });
 });

@@ -21,34 +21,51 @@ import {
   canAdvanceRoom,
   ISSUE_PART_KEYS,
   type IssuePartKey,
+  type RoomAdvanceBlock,
 } from '@/lib/guide-steps';
 import { defaultRoomNames, type TranslationKey } from '@/lib/i18n';
 import {
+  patchRoomDetails,
+  type RoomDetailPatch,
+} from '@/lib/room-details';
+import {
+  completeDraft,
+  loadDraftStore,
+  mutateDraftById,
+  mutateDraftStore,
+} from '@/lib/draft-store';
+import { captureFileLifecycle } from '@/lib/capture-files-runtime';
+import {
   createDraft,
   createRoom,
-  deletePhotoFile,
-  draftHasScanMeasure,
-  loadDraftStore,
-  measuredSqft,
-  persistPhoto,
+  draftCanBeVerified,
+  legacyCompatibilitySqft,
   recordedSqftValue,
-  saveDraftStore,
+  roomHasVerifiedScan,
+  scanMeasuredSqft,
   type DraftStore,
   type ManualWalkthroughDraft,
+  type RoomCapture,
   type RoomCondition,
+  type RoomScanArtifact,
   type VerificationStatus,
 } from '@/lib/walkthrough-draft';
 import { useLocale } from '@/providers/locale-provider';
 
 type ScreenStep = 'checkin' | 'roomGuide' | 'done';
 
+export type ScanTarget = {
+  draftId: string;
+  roomId: string;
+};
+
 type ManualWalkthroughProps = {
-  onOpenLidar?: () => void;
+  onOpenLidar?: (target: ScanTarget) => void;
+  onShareScan?: (artifact: RoomScanArtifact) => Promise<void>;
+  onSavingChange?: (isSaving: boolean) => void;
   lidarAvailable?: boolean;
-  /** When parent finishes a RoomPlan session, mark current room scanned. */
-  scanCompletedToken?: number;
-  /** Store already updated with scan measure — prefer over a disk reload. */
-  scanResultStore?: DraftStore | null;
+  manualUnverified?: boolean;
+  onStartAnother?: () => void;
 };
 
 const CONDITIONS: RoomCondition[] = ['good', 'watch', 'issue'];
@@ -127,9 +144,11 @@ function RoomSegments({
 
 export function ManualWalkthrough({
   onOpenLidar,
+  onShareScan,
+  onSavingChange,
   lidarAvailable = false,
-  scanCompletedToken = 0,
-  scanResultStore = null,
+  manualUnverified = false,
+  onStartAnother,
 }: ManualWalkthroughProps) {
   const theme = useTheme();
   const { t, locale } = useLocale();
@@ -141,12 +160,15 @@ export function ManualWalkthrough({
   const [hydrateError, setHydrateError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [shareFailure, setShareFailure] = useState<{
+    context: string;
+    message: string;
+  } | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const [propertyName, setPropertyName] = useState('');
   const [unitNumber, setUnitNumber] = useState('');
   const [recordedSqft, setRecordedSqft] = useState('');
-
-  const lastScanToken = useRef(0);
 
   const draft = store?.activeDraftId
     ? (store.drafts[store.activeDraftId] ?? null)
@@ -155,10 +177,26 @@ export function ManualWalkthrough({
 
   const roomIndex = draft?.guideRoomIndex ?? 0;
   const room = draft?.rooms[roomIndex] ?? null;
+  const shareContext = `${draft?.id ?? ''}:${room?.id ?? ''}:${screenStep}`;
+  const shareError =
+    shareFailure?.context === shareContext ? shareFailure.message : null;
   const nextRoom = draft?.rooms[roomIndex + 1] ?? null;
+  const roomVerified = room ? roomHasVerifiedScan(room) : false;
+  const previousRoomMeasurement =
+    !roomVerified &&
+    typeof room?.measuredSqftFromScan === 'number' &&
+    Number.isFinite(room.measuredSqftFromScan) &&
+    room.measuredSqftFromScan > 0
+      ? room.measuredSqftFromScan
+      : 0;
+  const lidarRequired = lidarAvailable && !manualUnverified;
 
   const measured = useMemo(
-    () => (draft ? measuredSqft(draft.rooms) : 0),
+    () => (draft ? scanMeasuredSqft(draft.rooms) : 0),
+    [draft]
+  );
+  const previousUnverifiedMeasured = useMemo(
+    () => (draft ? legacyCompatibilitySqft(draft) : 0),
     [draft]
   );
   const recorded = draft ? recordedSqftValue(draft) : null;
@@ -170,44 +208,79 @@ export function ManualWalkthrough({
   };
 
   useEffect(() => {
-    loadDraftStore().then(
-      (loaded) => {
-        let next = loaded;
-        const activeId = loaded.activeDraftId;
-        const active = activeId ? loaded.drafts[activeId] : null;
-        const inProgress =
-          !!active &&
-          !active.completedAt &&
-          (active.guidePhase != null ||
-            active.rooms.some((item) => item.scanned || item.photos.length > 0));
+    let mounted = true;
+
+    const hydrate = async () => {
+      try {
+        let next: DraftStore;
+        let nextStep: ScreenStep = 'checkin';
 
         if (params.mode === 'resume' && params.id) {
-          const target = loaded.drafts[params.id];
-          if (target) {
-            next = { ...loaded, activeDraftId: params.id };
-            void saveDraftStore(next);
-            setScreenStep(target.completedAt ? 'done' : 'roomGuide');
-          }
-        } else if (params.mode === 'new' && inProgress) {
-          next = loaded;
-          setScreenStep('roomGuide');
+          const selected = await mutateDraftStore<ScreenStep>((current) => {
+            const target = current.drafts[params.id!];
+            if (!target) {
+              return null;
+            }
+            return {
+              store: { ...current, activeDraftId: params.id! },
+              value: target.completedAt ? 'done' : 'roomGuide',
+            };
+          });
+          next = selected?.store ?? (await loadDraftStore());
+          nextStep = selected?.value ?? 'checkin';
         } else if (params.mode === 'new') {
-          next = { ...loaded, activeDraftId: null };
-          void saveDraftStore(next);
-          setScreenStep('checkin');
-        } else if (active) {
-          setScreenStep(active.completedAt ? 'done' : 'roomGuide');
+          const selected = await mutateDraftStore<ScreenStep>((current) => {
+            const activeId = current.activeDraftId;
+            const active = activeId ? current.drafts[activeId] : null;
+            const inProgress =
+              !!active &&
+              !active.completedAt &&
+              (active.guidePhase != null ||
+                active.rooms.some(
+                  (item) => item.scanned || item.photos.length > 0
+                ));
+            return {
+              store: inProgress
+                ? current
+                : { ...current, activeDraftId: null },
+              value: inProgress ? 'roomGuide' : 'checkin',
+            };
+          });
+          next = selected!.store;
+          nextStep = selected!.value;
+        } else {
+          next = await loadDraftStore();
+          const activeId = next.activeDraftId;
+          const active = activeId ? next.drafts[activeId] : null;
+          nextStep = active
+            ? active.completedAt
+              ? 'done'
+              : 'roomGuide'
+            : 'checkin';
+        }
+
+        void captureFileLifecycle.sweepOrphans().catch(() => undefined);
+        if (!mounted) {
+          return;
         }
         storeRef.current = next;
         setStore(next);
-      },
-      () => {
+        setScreenStep(nextStep);
+      } catch {
+        if (!mounted) {
+          return;
+        }
         const empty: DraftStore = { activeDraftId: null, drafts: {} };
         storeRef.current = empty;
         setStore(empty);
         setHydrateError(t('restoreFailed'));
       }
-    );
+    };
+
+    void hydrate();
+    return () => {
+      mounted = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- remount on route params only
   }, [params.mode, params.id]);
 
@@ -215,129 +288,107 @@ export function ManualWalkthrough({
     storeRef.current = store;
   }, [store]);
 
-  const persistStore = (next: DraftStore) => {
+  const applyCommittedStore = (next: DraftStore) => {
+    storeRef.current = next;
     setStore(next);
-    setSavedMessage(null);
-    void saveDraftStore(next).catch(() => {
-      setHydrateError(t('saveFailed'));
-    });
   };
 
-  const persistDraft = (
-    next: ManualWalkthroughDraft
-  ): Promise<DraftStore | null> => {
-    setSavedMessage(null);
-    return new Promise((resolve) => {
-      setStore((current) => {
-        if (!current) {
-          resolve(null);
-          return current;
-        }
-        const updated: DraftStore = {
-          activeDraftId: next.id,
-          drafts: { ...current.drafts, [next.id]: next },
-        };
-        storeRef.current = updated;
-        void saveDraftStore(updated).then(
-          () => resolve(updated),
-          () => {
-            setHydrateError(t('saveFailed'));
-            resolve(null);
-          }
-        );
-        return updated;
-      });
-    });
-  };
-
-  const updateGuide = (
-    patch: Partial<ManualWalkthroughDraft>,
-    roomsPatch?: ManualWalkthroughDraft['rooms']
+  const persistDraftMutation = async (
+    draftId: string,
+    mutation: (
+      latest: ManualWalkthroughDraft
+    ) => ManualWalkthroughDraft | null
   ) => {
-    if (!draft) {
-      return;
+    setSavedMessage(null);
+    try {
+      const committed = await mutateDraftById(draftId, (latest) => {
+        const next = mutation(latest);
+        return next === null ? null : { draft: next, value: undefined };
+      });
+      if (committed) {
+        applyCommittedStore(committed.store);
+      }
+      return committed;
+    } catch {
+      setHydrateError(t('saveFailed'));
+      return null;
     }
-    persistDraft({
-      ...draft,
-      ...patch,
-      rooms: roomsPatch ?? draft.rooms,
-      completedAt: undefined,
-      guidePhase: 'room',
-    });
   };
 
-  const patchRoom = (patch: Partial<NonNullable<typeof room>>) => {
+  const updateRoomById = (
+    draftId: string,
+    roomId: string,
+    mutation: (latest: RoomCapture) => RoomCapture
+  ) =>
+    persistDraftMutation(draftId, (latest) => {
+      let found = false;
+      const rooms = latest.rooms.map((item) => {
+        if (item.id !== roomId) {
+          return item;
+        }
+        found = true;
+        return mutation(item);
+      });
+      if (!found) {
+        return null;
+      }
+      return {
+        ...latest,
+        rooms,
+        completedAt: undefined,
+        guidePhase: 'room',
+      };
+    });
+
+  const patchRoom = (patch: RoomDetailPatch) => {
     if (!draft || !room) {
       return;
     }
-    const rooms = draft.rooms.map((item, i) =>
-      i === roomIndex ? { ...item, ...patch } : item
+    void updateRoomById(draft.id, room.id, (latest) =>
+      patchRoomDetails(latest, patch)
     );
-    updateGuide({}, rooms);
   };
 
   const startJob = () => {
     if (!store || !propertyName.trim() || !unitNumber.trim()) {
       return;
     }
+    onStartAnother?.();
     const next = createDraft(
       propertyName,
       unitNumber,
       recordedSqft,
       defaultRoomNames(locale)
     );
-    // Await disk write so a fast Scan tap cannot race an empty activeDraftId.
-    void persistDraft(next).then((saved) => {
-      if (!saved) {
-        return;
-      }
-      router.setParams({ mode: 'resume', id: next.id });
-      setPropertyName('');
-      setUnitNumber('');
-      setRecordedSqft('');
-      setScreenStep('roomGuide');
-    });
+    void mutateDraftStore((current) => ({
+      store: {
+        activeDraftId: next.id,
+        drafts: { ...current.drafts, [next.id]: next },
+      },
+      value: undefined,
+    }))
+      .then((committed) => {
+        if (!committed) {
+          return;
+        }
+        applyCommittedStore(committed.store);
+        router.setParams({ mode: 'resume', id: next.id });
+        setPropertyName('');
+        setUnitNumber('');
+        setRecordedSqft('');
+        setScreenStep('roomGuide');
+      })
+      .catch(() => {
+        setHydrateError(t('saveFailed'));
+      });
   };
 
-  useEffect(() => {
-    if (!scanCompletedToken || scanCompletedToken === lastScanToken.current) {
-      return;
-    }
-    lastScanToken.current = scanCompletedToken;
-
-    // Prefer the in-memory store the parent just wrote (has measured sq ft).
-    if (scanResultStore) {
-      storeRef.current = scanResultStore;
-      setStore(scanResultStore);
-      const activeId = scanResultStore.activeDraftId;
-      const active = activeId ? scanResultStore.drafts[activeId] : null;
-      if (active && !active.completedAt) {
-        setScreenStep('roomGuide');
-      }
-      return;
-    }
-
-    let cancelled = false;
-    void loadDraftStore().then((loaded) => {
-      if (cancelled) {
-        return;
-      }
-      storeRef.current = loaded;
-      setStore(loaded);
-      const activeId = loaded.activeDraftId;
-      const active = activeId ? loaded.drafts[activeId] : null;
-      if (active && !active.completedAt) {
-        setScreenStep('roomGuide');
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [scanCompletedToken, scanResultStore]);
-
   const addPhoto = async (source: 'camera' | 'library') => {
-    if (!storeRef.current?.activeDraftId) {
+    const current = storeRef.current;
+    const draftId = current?.activeDraftId;
+    const active = draftId ? current?.drafts[draftId] : null;
+    const roomId = active?.rooms[active.guideRoomIndex ?? 0]?.id;
+    if (!draftId || !roomId) {
       return;
     }
     setPhotoError(null);
@@ -364,74 +415,43 @@ export function ManualWalkthrough({
       if (result.canceled) {
         return;
       }
-      const latest = storeRef.current;
-      const activeId = latest?.activeDraftId;
-      const active = activeId ? latest?.drafts[activeId] : null;
-      if (!active) {
-        return;
-      }
-      const idx = active.guideRoomIndex ?? 0;
-      const currentRoom = active.rooms[idx];
-      if (!currentRoom) {
-        return;
-      }
-      const added: ReturnType<typeof persistPhoto>[] = [];
-      let failed = 0;
-      for (const asset of result.assets) {
-        try {
-          added.push(persistPhoto(active.id, asset.uri));
-        } catch {
-          failed += 1;
-        }
-      }
-      if (added.length === 0) {
-        setPhotoError(t('photoFailed'));
-        return;
-      }
-      const rooms = active.rooms.map((item, i) =>
-        i === idx
-          ? { ...item, photos: [...item.photos, ...added] }
-          : item
-      );
-      void persistDraft({
-        ...active,
-        rooms,
-        completedAt: undefined,
-        guidePhase: 'room',
+      const committed = await captureFileLifecycle.addPhotos({
+        draftId,
+        roomId,
+        sourceUris: result.assets.map((asset) => asset.uri),
       });
-      if (failed > 0) {
-        setPhotoError(t('photoFailed'));
+      if (!committed) {
+        throw new Error('Draft changed before photos could be saved.');
       }
+      applyCommittedStore(committed.store);
     } catch {
       setPhotoError(t('photoFailed'));
     }
   };
 
-  const removePhoto = (photoId: string) => {
+  const removePhoto = async (photoId: string) => {
     if (!draft || !room) {
       return;
     }
-    const photo = room.photos.find((item) => item.id === photoId);
-    if (photo) {
-      deletePhotoFile(photo.uri);
+    try {
+      const committed = await captureFileLifecycle.removePhoto({
+        draftId: draft.id,
+        roomId: room.id,
+        photoId,
+      });
+      if (!committed) {
+        throw new Error('Draft changed before the photo could be removed.');
+      }
+      applyCommittedStore(committed.store);
+    } catch {
+      setHydrateError(t('saveFailed'));
     }
-    const rooms = draft.rooms.map((item, i) =>
-      i === roomIndex
-        ? {
-            ...item,
-            photos: item.photos.filter((entry) => entry.id !== photoId),
-          }
-        : item
-    );
-    persistDraft({
-      ...draft,
-      rooms,
-      completedAt: undefined,
-      guidePhase: 'room',
-    });
   };
 
   const goBackStep = () => {
+    if (isSaving) {
+      return;
+    }
     if (screenStep === 'done' && draft && !draft.completedAt) {
       setScreenStep('roomGuide');
       return;
@@ -439,21 +459,31 @@ export function ManualWalkthrough({
     if (screenStep !== 'roomGuide' || !draft) {
       return;
     }
-    if (roomIndex > 0) {
-      updateGuide({
-        guideRoomIndex: roomIndex - 1,
-        guidePhase: 'room',
+    if (roomIndex > 0 && room) {
+      void persistDraftMutation(draft.id, (latest) => {
+        const latestIndex = latest.rooms.findIndex(
+          (item) => item.id === room.id
+        );
+        if (latestIndex <= 0) {
+          return null;
+        }
+        return {
+          ...latest,
+          guideRoomIndex: latestIndex - 1,
+          guidePhase: 'room',
+          completedAt: undefined,
+        };
       });
       return;
     }
     setScreenStep('checkin');
   };
 
-  const goNextRoomOrFinish = (finish: boolean) => {
+  const goNextRoomOrFinish = () => {
     if (!draft || !room) {
       return;
     }
-    const block = canAdvanceRoom(room, lidarAvailable);
+    const block = canAdvanceRoom(room, lidarRequired);
     if (block === 'photo') {
       setPhotoError(t('photoRequired'));
       return;
@@ -463,86 +493,182 @@ export function ManualWalkthrough({
       return;
     }
     setPhotoError(null);
-    if (finish || roomIndex >= draft.rooms.length - 1) {
-      setScreenStep('done');
-      updateGuide({ guidePhase: 'room' });
-      return;
-    }
-    updateGuide({
-      guideRoomIndex: roomIndex + 1,
-      guidePhase: 'room',
-    });
+    void mutateDraftById<{
+      block: RoomAdvanceBlock;
+      finished: boolean;
+    }>(draft.id, (latest) => {
+      const latestIndex = latest.rooms.findIndex(
+        (item) => item.id === room.id
+      );
+      if (latestIndex < 0) {
+        return null;
+      }
+      const latestRoom = latest.rooms[latestIndex];
+      const latestBlock = canAdvanceRoom(latestRoom, lidarRequired);
+      if (latestBlock !== 'ok') {
+        return {
+          draft: latest,
+          value: { block: latestBlock, finished: false },
+        };
+      }
+      const finished = latestIndex >= latest.rooms.length - 1;
+      return {
+        draft: {
+          ...latest,
+          guideRoomIndex: finished ? latestIndex : latestIndex + 1,
+          guidePhase: 'room',
+          completedAt: undefined,
+        },
+        value: { block: 'ok', finished },
+      };
+    })
+      .then((committed) => {
+        if (!committed) {
+          return;
+        }
+        applyCommittedStore(committed.store);
+        if (committed.value.block === 'photo') {
+          setPhotoError(t('photoRequired'));
+        } else if (committed.value.block === 'scan') {
+          setPhotoError(t('scanRequired'));
+        } else if (committed.value.finished) {
+          setScreenStep('done');
+        }
+      })
+      .catch(() => {
+        setHydrateError(t('saveFailed'));
+      });
   };
 
   const skipRoom = () => {
-    if (!draft) {
+    if (!draft || !room) {
       return;
     }
-    if (roomIndex >= draft.rooms.length - 1) {
-      setScreenStep('done');
-      return;
-    }
-    updateGuide({
-      guideRoomIndex: roomIndex + 1,
-      guidePhase: 'room',
-    });
+    void mutateDraftById(draft.id, (latest) => {
+      const latestIndex = latest.rooms.findIndex(
+        (item) => item.id === room.id
+      );
+      if (latestIndex < 0) {
+        return null;
+      }
+      const finished = latestIndex >= latest.rooms.length - 1;
+      return {
+        draft: {
+          ...latest,
+          rooms: latest.rooms.map((item) =>
+            item.id === room.id ? { ...item, skipped: true } : item
+          ),
+          guideRoomIndex: finished ? latestIndex : latestIndex + 1,
+          guidePhase: 'room',
+          completedAt: undefined,
+          verificationStatus: 'unverified',
+        },
+        value: { finished },
+      };
+    })
+      .then((committed) => {
+        if (!committed) {
+          return;
+        }
+        applyCommittedStore(committed.store);
+        if (committed.value.finished) {
+          setScreenStep('done');
+        }
+      })
+      .catch(() => {
+        setHydrateError(t('saveFailed'));
+      });
   };
 
   const addRoom = () => {
     if (!draft) {
       return;
     }
-    persistDraft({
-      ...draft,
-      rooms: [...draft.rooms, createRoom('')],
+    void persistDraftMutation(draft.id, (latest) => ({
+      ...latest,
+      rooms: [...latest.rooms, createRoom('')],
       completedAt: undefined,
       guidePhase: 'room',
-    });
+      verificationStatus: 'unverified',
+    }));
   };
 
   const setCondition = (condition: RoomCondition) => {
-    if (!room) {
+    if (!draft || !room) {
       return;
     }
-    const hasDamage = condition !== 'good';
-    patchRoom({
-      condition,
-      hasDamage,
-      issueParts: condition === 'good' ? [] : room.issueParts ?? [],
-    });
+    void updateRoomById(draft.id, room.id, (latest) =>
+      patchRoomDetails(latest, {
+        condition,
+        hasDamage: condition !== 'good',
+        issueParts: condition === 'good' ? [] : latest.issueParts ?? [],
+      })
+    );
   };
 
   const togglePart = (part: IssuePartKey) => {
-    if (!room) {
+    if (!draft || !room) {
       return;
     }
-    const current = room.issueParts ?? [];
-    const next = current.includes(part)
-      ? current.filter((item) => item !== part)
-      : [...current, part];
-    patchRoom({
-      issueParts: next,
-      hasDamage: room.condition !== 'good' || next.length > 0,
+    void updateRoomById(draft.id, room.id, (latest) => {
+      const current = latest.issueParts ?? [];
+      const next = current.includes(part)
+        ? current.filter((item) => item !== part)
+        : [...current, part];
+      return patchRoomDetails(latest, {
+        issueParts: next,
+        hasDamage: latest.condition !== 'good' || next.length > 0,
+      });
     });
   };
 
-  const saveJob = (status: VerificationStatus) => {
-    if (!draft) {
+  const shareScanFiles = async (artifact: RoomScanArtifact) => {
+    if (!onShareScan) {
       return;
     }
-    const verifiedOk = status === 'verified' && draftHasScanMeasure(draft);
-    const finalStatus: VerificationStatus =
-      verifiedOk && lidarAvailable ? 'verified' : 'unverified';
-    const totalMeasured = measuredSqft(draft.rooms);
-    persistDraft({
-      ...draft,
-      completedAt: new Date().toISOString(),
-      verificationStatus: finalStatus,
-      measuredSqftFromScan: totalMeasured > 0 ? totalMeasured : undefined,
-    });
-    setSavedMessage(t('savedOnDevice'));
-    setScreenStep('done');
+    setShareFailure(null);
+    try {
+      await onShareScan(artifact);
+    } catch {
+      setShareFailure({
+        context: shareContext,
+        message: t('shareScanFailed'),
+      });
+    }
   };
+
+  const saveJob = async (requestedStatus: VerificationStatus) => {
+    if (!draft || isSaving) {
+      return;
+    }
+    setIsSaving(true);
+    onSavingChange?.(true);
+    setHydrateError(null);
+    setSavedMessage(null);
+    try {
+      const committed = await completeDraft({
+        draftId: draft.id,
+        requestedStatus,
+      });
+      if (!committed) {
+        throw new Error('Draft changed before save.');
+      }
+      applyCommittedStore(committed.store);
+      setSavedMessage(t('savedOnDevice'));
+      setScreenStep('done');
+    } catch {
+      setHydrateError(t('saveFailed'));
+    } finally {
+      setIsSaving(false);
+      onSavingChange?.(false);
+    }
+  };
+
+  const canSaveVerified =
+    !!draft &&
+    lidarAvailable &&
+    !manualUnverified &&
+    draftCanBeVerified(draft);
 
   const showGuideBack =
     screenStep === 'roomGuide' ||
@@ -578,8 +704,9 @@ export function ManualWalkthrough({
           {showGuideBack ? (
             <Pressable
               accessibilityRole="button"
+              disabled={isSaving}
               onPress={goBackStep}
-              style={styles.backHit}>
+              style={[styles.backHit, isSaving && styles.buttonDisabled]}>
               <ThemedText type="smallBold" style={{ color: theme.accentText }}>
                 ‹ {t('back')}
               </ThemedText>
@@ -680,9 +807,15 @@ export function ManualWalkthrough({
               {room.name || t('rooms')}
             </ThemedText>
 
+            {manualUnverified ? (
+              <ThemedText type="default" style={{ color: theme.warning }}>
+                {t('manualUnverifiedNotice')}
+              </ThemedText>
+            ) : null}
+
             {lidarAvailable ? (
               <View style={styles.section}>
-                {room.scanned ? (
+                {roomVerified ? (
                   <View
                     style={[
                       styles.scanDoneRow,
@@ -690,32 +823,66 @@ export function ManualWalkthrough({
                     ]}>
                     <ThemedText type="default" style={styles.scanDoneLabel}>
                       ✓{' '}
-                      {room.measuredSqftFromScan
-                        ? `${Math.round(room.measuredSqftFromScan)} ${t('sqftUnit')}`
-                        : t('roomsScanned')}
+                      {Math.round(room.scanArtifact!.measuredSqft)}{' '}
+                      {t('squareFeetShort')}
                     </ThemedText>
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={() => onOpenLidar?.()}
-                      style={[
-                        styles.againChip,
-                        { borderColor: theme.accent },
-                      ]}>
-                      <ThemedText
-                        type="smallBold"
-                        style={{ color: theme.accentText }}>
-                        {t('scanAgain')}
-                      </ThemedText>
-                    </Pressable>
+                    <View style={styles.scanActionColumn}>
+                      {onShareScan ? (
+                        <Pressable
+                          accessibilityRole="button"
+                          onPress={() => {
+                            void shareScanFiles(room.scanArtifact!);
+                          }}
+                          style={[
+                            styles.againChip,
+                            { borderColor: theme.accent },
+                          ]}>
+                          <ThemedText
+                            type="smallBold"
+                            style={{ color: theme.accentText }}>
+                            {t('shareScanFiles')}
+                          </ThemedText>
+                        </Pressable>
+                      ) : null}
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() =>
+                          onOpenLidar?.({
+                            draftId: draft.id,
+                            roomId: room.id,
+                          })
+                        }
+                        style={[
+                          styles.againChip,
+                          { borderColor: theme.accent },
+                        ]}>
+                        <ThemedText
+                          type="smallBold"
+                          style={{ color: theme.accentText }}>
+                          {t('scanAgain')}
+                        </ThemedText>
+                      </Pressable>
+                    </View>
                   </View>
                 ) : (
                   <>
                     <GuideButton
                       label={t('scanRoom')}
-                      onPress={() => onOpenLidar?.()}
+                      onPress={() =>
+                        onOpenLidar?.({ draftId: draft.id, roomId: room.id })
+                      }
                       accent={theme.accent}
                       onAccent={theme.onAccent}
                     />
+                    {previousRoomMeasurement > 0 ? (
+                      <ThemedText
+                        type="smallBold"
+                        style={[styles.centerHint, { color: theme.warning }]}>
+                        {t('previousUnverifiedMeasurement')}:{' '}
+                        {Math.round(previousRoomMeasurement)}{' '}
+                        {t('squareFeetShort')}
+                      </ThemedText>
+                    ) : null}
                     <ThemedText
                       type="small"
                       themeColor="textSecondary"
@@ -724,6 +891,11 @@ export function ManualWalkthrough({
                     </ThemedText>
                   </>
                 )}
+                {shareError ? (
+                  <ThemedText type="small" style={{ color: theme.danger }}>
+                    {shareError}
+                  </ThemedText>
+                ) : null}
               </View>
             ) : null}
 
@@ -864,7 +1036,9 @@ export function ManualWalkthrough({
                       accessibilityRole="button"
                       accessibilityLabel={t('removePhoto')}
                       hitSlop={8}
-                      onPress={() => removePhoto(photo.id)}
+                      onPress={() => {
+                        void removePhoto(photo.id);
+                      }}
                       style={[
                         styles.photoRemove,
                         { backgroundColor: theme.dangerFill },
@@ -891,9 +1065,7 @@ export function ManualWalkthrough({
 
             <GuideButton
               label={nextLabel}
-              onPress={() =>
-                goNextRoomOrFinish(roomIndex >= draft.rooms.length - 1)
-              }
+              onPress={goNextRoomOrFinish}
               accent={theme.accent}
               onAccent={theme.onAccent}
             />
@@ -965,9 +1137,7 @@ export function ManualWalkthrough({
                     {t('measuredSqftLabel')}
                   </ThemedText>
                   <ThemedText type="heading" style={styles.measureLine}>
-                    {measured > 0
-                      ? `${Math.round(measured)} ${t('sqftUnit')}`
-                      : '—'}
+                    {measured > 0 ? Math.round(measured) : '—'}
                   </ThemedText>
                 </View>
               </View>
@@ -976,7 +1146,44 @@ export function ManualWalkthrough({
                   {t('measuredPending')}
                 </ThemedText>
               ) : null}
+              {previousUnverifiedMeasured > 0 ? (
+                <ThemedText type="smallBold" style={{ color: theme.warning }}>
+                  {t('previousUnverifiedMeasurement')}:{' '}
+                  {Math.round(previousUnverifiedMeasured)}{' '}
+                  {t('squareFeetShort')}
+                </ThemedText>
+              ) : null}
             </View>
+            {onShareScan &&
+            draft.rooms.some((item) => item.scanArtifact != null) ? (
+              <View style={styles.section}>
+                {draft.rooms.map((item) =>
+                  item.scanArtifact ? (
+                    <Pressable
+                      key={item.id}
+                      accessibilityRole="button"
+                      onPress={() => {
+                        void shareScanFiles(item.scanArtifact!);
+                      }}
+                      style={[
+                        styles.shareScanButton,
+                        { borderColor: theme.border },
+                      ]}>
+                      <ThemedText
+                        type="smallBold"
+                        style={{ color: theme.accentText }}>
+                        {item.name || t('rooms')} · {t('shareScanFiles')}
+                      </ThemedText>
+                    </Pressable>
+                  ) : null
+                )}
+                {shareError ? (
+                  <ThemedText type="small" style={{ color: theme.danger }}>
+                    {shareError}
+                  </ThemedText>
+                ) : null}
+              </View>
+            ) : null}
             {savedMessage ? (
               <ThemedText type="default" themeColor="textSecondary">
                 {savedMessage}
@@ -984,24 +1191,32 @@ export function ManualWalkthrough({
             ) : null}
             {!draft.completedAt ? (
               <>
-                {lidarAvailable && draftHasScanMeasure(draft) ? (
+                {canSaveVerified ? (
                   <GuideButton
-                    label={t('saveVerified')}
-                    onPress={() => saveJob('verified')}
+                    label={isSaving ? t('saving') : t('saveVerified')}
+                    onPress={() => {
+                      void saveJob('verified');
+                    }}
+                    disabled={isSaving}
                     accent={theme.accent}
                     onAccent={theme.onAccent}
                   />
                 ) : null}
                 <GuideButton
                   label={
-                    lidarAvailable && draftHasScanMeasure(draft)
-                      ? t('saveJob')
-                      : t('saveUnverified')
+                    isSaving
+                      ? t('saving')
+                      : canSaveVerified
+                        ? t('saveJob')
+                        : t('saveUnverified')
                   }
-                  onPress={() => saveJob('unverified')}
+                  onPress={() => {
+                    void saveJob('unverified');
+                  }}
+                  disabled={isSaving}
                   accent={theme.accent}
                   onAccent={theme.onAccent}
-                  secondary={lidarAvailable && draftHasScanMeasure(draft)}
+                  secondary={canSaveVerified}
                   border={theme.border}
                 />
               </>
@@ -1010,12 +1225,22 @@ export function ManualWalkthrough({
                 <GuideButton
                   label={t('startAnother')}
                   onPress={() => {
-                    if (!store) {
-                      return;
-                    }
-                    persistStore({ ...store, activeDraftId: null });
-                    setScreenStep('checkin');
-                    setSavedMessage(null);
+                    onStartAnother?.();
+                    void mutateDraftStore((current) => ({
+                      store: { ...current, activeDraftId: null },
+                      value: undefined,
+                    }))
+                      .then((committed) => {
+                        if (!committed) {
+                          return;
+                        }
+                        applyCommittedStore(committed.store);
+                        setScreenStep('checkin');
+                        setSavedMessage(null);
+                      })
+                      .catch(() => {
+                        setHydrateError(t('saveFailed'));
+                      });
                   }}
                   accent={theme.accent}
                   onAccent={theme.onAccent}
@@ -1103,6 +1328,11 @@ const styles = StyleSheet.create({
   scanDoneLabel: {
     fontWeight: '700',
     fontSize: 18,
+    flex: 1,
+  },
+  scanActionColumn: {
+    alignItems: 'stretch',
+    gap: Spacing.one,
   },
   againChip: {
     minHeight: 36,
@@ -1212,6 +1442,14 @@ const styles = StyleSheet.create({
     minHeight: MinTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  shareScanButton: {
+    minHeight: MinTouchTarget,
+    borderRadius: Spacing.two,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.three,
   },
   statusBanner: {
     borderRadius: Spacing.three,

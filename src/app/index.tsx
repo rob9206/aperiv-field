@@ -1,5 +1,5 @@
-import { Link, router } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { Link, router, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -9,12 +9,9 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MinTouchTarget, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import {
-  deleteDraftPhotos,
-  loadDraftStore,
-  saveDraftStore,
-  type DraftStore,
-} from '@/lib/walkthrough-draft';
+import { captureFileLifecycle } from '@/lib/capture-files-runtime';
+import { loadDraftStore, mutateDraftStore } from '@/lib/draft-store';
+import { type DraftStore } from '@/lib/walkthrough-draft';
 import { useAuth } from '@/providers/auth-provider';
 import { useLocale } from '@/providers/locale-provider';
 
@@ -24,44 +21,76 @@ export default function HomeScreen() {
   const { t } = useLocale();
   const signedIn = !!session;
   const [store, setStore] = useState<DraftStore | null>(null);
+  const [hasSaveError, setHasSaveError] = useState(false);
 
-  const refreshStore = useCallback(() => {
-    void loadDraftStore().then(setStore, () =>
-      setStore({ activeDraftId: null, drafts: {} })
+  const refreshStore = useCallback((clearSaveError = false) => {
+    void loadDraftStore().then(
+      (next) => {
+        if (clearSaveError) {
+          setHasSaveError(false);
+        }
+        setStore(next);
+        void captureFileLifecycle.sweepOrphans().catch(() => undefined);
+      },
+      () => setStore({ activeDraftId: null, drafts: {} })
     );
   }, []);
 
-  useEffect(() => {
-    if (signedIn) {
-      refreshStore();
-    }
-  }, [signedIn, refreshStore]);
+  useFocusEffect(
+    useCallback(() => {
+      if (signedIn) {
+        refreshStore(true);
+      }
+    }, [signedIn, refreshStore])
+  );
 
   const onNewJob = () => {
     router.push({ pathname: '/walkthrough', params: { mode: 'new' } });
   };
 
+  const handleMutationFailure = () => {
+    setHasSaveError(true);
+    refreshStore();
+  };
+
   const onOpenJob = async (id: string) => {
-    const current = store ?? (await loadDraftStore());
-    const next: DraftStore = { ...current, activeDraftId: id };
-    await saveDraftStore(next);
-    setStore(next);
-    router.push({
-      pathname: '/walkthrough',
-      params: { mode: 'resume', id },
-    });
+    try {
+      const committed = await mutateDraftStore((current) => {
+        if (!Object.prototype.hasOwnProperty.call(current.drafts, id)) {
+          return null;
+        }
+        return {
+          store: { ...current, activeDraftId: id },
+          value: undefined,
+        };
+      });
+      if (!committed) {
+        handleMutationFailure();
+        return;
+      }
+      setHasSaveError(false);
+      setStore(committed.store);
+      router.push({
+        pathname: '/walkthrough',
+        params: { mode: 'resume', id },
+      });
+    } catch {
+      handleMutationFailure();
+    }
   };
 
   const onDeleteJob = async (id: string) => {
-    const current = store ?? (await loadDraftStore());
-    deleteDraftPhotos(id);
-    const { [id]: _removed, ...rest } = current.drafts;
-    const next: DraftStore = {
-      activeDraftId: current.activeDraftId === id ? null : current.activeDraftId,
-      drafts: rest,
-    };
-    await saveDraftStore(next);
-    setStore(next);
+    try {
+      const committed = await captureFileLifecycle.deleteDraft(id);
+      if (!committed) {
+        handleMutationFailure();
+        return;
+      }
+      setHasSaveError(false);
+      setStore(committed.store);
+    } catch {
+      handleMutationFailure();
+    }
   };
 
   return (
@@ -102,6 +131,11 @@ export default function HomeScreen() {
                   </ThemedText>
                 ) : null}
               </View>
+              {hasSaveError ? (
+                <ThemedText type="default" style={{ color: theme.danger }}>
+                  {t('saveFailed')}
+                </ThemedText>
+              ) : null}
               {store ? (
                 <JobList
                   store={store}

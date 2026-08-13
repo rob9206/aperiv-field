@@ -4,42 +4,57 @@ import { describe, it } from 'node:test';
 import { canAdvanceRoom } from './guide-steps.ts';
 
 describe('canAdvanceRoom', () => {
+  const artifact = {
+    scanId: 'scan-1',
+    jsonPath: '/scan/Room.json',
+    usdzPath: '/scan/Room.usdz',
+    measuredSqft: 100,
+    source: 'roomplan-floor-polygon' as const,
+    capturedAt: '2026-08-12T00:00:00.000Z',
+  };
+
   it('blocks when no photos', () => {
     assert.equal(
-      canAdvanceRoom(
-        { photos: [], scanned: true, measuredSqftFromScan: 120 },
-        true
-      ),
+      canAdvanceRoom({ photos: [], scanArtifact: artifact }, true),
       'photo'
     );
   });
 
-  it('blocks LiDAR path until scanned with measure', () => {
+  it('blocks the LiDAR path until the room has a measurement', () => {
     assert.equal(
-      canAdvanceRoom({ photos: [{ id: '1', uri: 'x' }], scanned: false }, true),
-      'scan'
-    );
-    assert.equal(
-      canAdvanceRoom({ photos: [{ id: '1', uri: 'x' }], scanned: true }, true),
+      canAdvanceRoom({ photos: [{ id: '1', uri: 'x' }] }, true),
       'scan'
     );
   });
 
-  it('allows non-LiDAR with a photo', () => {
-    assert.equal(
-      canAdvanceRoom({ photos: [{ id: '1', uri: 'x' }], scanned: false }, false),
-      'ok'
-    );
-  });
-
-  it('allows LiDAR after scan measure + photo', () => {
+  it('blocks skipped rooms while LiDAR verification remains enabled', () => {
     assert.equal(
       canAdvanceRoom(
         {
           photos: [{ id: '1', uri: 'x' }],
-          scanned: true,
-          measuredSqftFromScan: 140,
+          scanArtifact: artifact,
+          skipped: true,
         },
+        true
+      ),
+      'scan'
+    );
+  });
+
+  it('allows non-LiDAR capture with a photo', () => {
+    assert.equal(
+      canAdvanceRoom(
+        { photos: [{ id: '1', uri: 'x' }], skipped: true },
+        false
+      ),
+      'ok'
+    );
+  });
+
+  it('allows LiDAR after a verified measurement and photo', () => {
+    assert.equal(
+      canAdvanceRoom(
+        { photos: [{ id: '1', uri: 'x' }], scanArtifact: artifact },
         true
       ),
       'ok'

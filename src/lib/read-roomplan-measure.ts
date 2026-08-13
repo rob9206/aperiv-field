@@ -2,42 +2,21 @@ import { File } from 'expo-file-system';
 
 import type { RoomScanExportResult } from '../../modules/expo-room-scan';
 import {
-  measuredSqftFromExportFields,
-  measuredSqftFromRoomPlanJson,
+  parseVerifiedRoomPlanMeasurement,
+  type VerifiedScanMeasurement,
 } from './roomplan-measure';
 
-function fileFromPath(path: string): File {
-  if (path.startsWith('file://')) {
-    return new File(path);
-  }
-  return new File(`file://${path}`);
-}
-
-/**
- * Resolve measured floor area (sq ft) from a RoomPlan export.
- * Prefers native area fields; falls back to parsing Room.json (OTA-safe).
- */
-export async function readMeasuredSqftFromExport(
-  results: RoomScanExportResult
-): Promise<number | null> {
-  const fromFields = measuredSqftFromExportFields({
-    areaSquareFeet: results.areaSquareFeet,
-    areaSquareMeters: results.areaSquareMeters,
-  });
-  if (fromFields != null) {
-    return fromFields;
-  }
-
+export async function readVerifiedMeasurementFromExport(
+  result: RoomScanExportResult
+): Promise<VerifiedScanMeasurement | null> {
   try {
-    const file = fileFromPath(results.jsonPath);
-    if (!file.exists) {
-      return null;
-    }
-    const text = await file.text();
-    const json: unknown = JSON.parse(text);
-    return measuredSqftFromRoomPlanJson(json);
-  } catch (error) {
-    console.warn('Failed to read RoomPlan floor area from export', error);
+    const uri = result.jsonPath.startsWith('file://')
+      ? result.jsonPath
+      : `file://${result.jsonPath}`;
+    const file = new File(uri);
+    if (!file.exists) return null;
+    return parseVerifiedRoomPlanMeasurement(JSON.parse(await file.text()));
+  } catch {
     return null;
   }
 }

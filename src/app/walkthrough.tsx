@@ -3,16 +3,23 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { ManualWalkthrough } from '@/components/manual-walkthrough';
+import {
+  ManualWalkthrough,
+  type ScanTarget,
+} from '@/components/manual-walkthrough';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { readMeasuredSqftFromExport } from '@/lib/read-roomplan-measure';
+import { captureFileLifecycle } from '@/lib/capture-files-runtime';
+import { readVerifiedMeasurementFromExport } from '@/lib/read-roomplan-measure';
+import type { TranslationKey } from '@/lib/i18n';
 import {
-  markActiveRoomScanned,
-  type DraftStore,
-} from '@/lib/walkthrough-draft';
+  SCAN_PROCESSING_TIMEOUT_MS,
+  shouldHandleProcessingTimeout,
+} from '@/lib/scan-processing';
+import type { RoomScanArtifact } from '@/lib/walkthrough-draft';
+import { useLocale } from '@/providers/locale-provider';
 import {
   RoomScanView,
   addErrorListener,
@@ -24,96 +31,195 @@ import {
   isSupported,
   share,
   startSession,
-  type RoomScanExportResult,
 } from '../../modules/expo-room-scan';
+
+type ActiveScan = {
+  scanId: string;
+  target: ScanTarget;
+};
 
 type ScanState =
   | { phase: 'checking' }
-  | { phase: 'manual'; lidarAvailable: boolean }
-  | { phase: 'ready' }
+  | {
+      phase: 'manual';
+      lidarAvailable: boolean;
+      manualUnverified: boolean;
+    }
+  | { phase: 'ready'; scan: ActiveScan }
   | { phase: 'scanning' }
   | { phase: 'processing' }
-  | { phase: 'complete'; results: RoomScanExportResult; shareError?: string }
-  | { phase: 'error'; message: string };
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'An unexpected room scanning error occurred.';
-}
-
-function fileName(path: string): string {
-  return path.split('/').pop() ?? path;
-}
+  | {
+      phase: 'error';
+      messageKey: Extract<
+        TranslationKey,
+        'scanInterrupted' | 'scanMeasureFailed' | 'scanDraftMissing'
+      >;
+      retryTarget: ScanTarget;
+    };
 
 export default function WalkthroughScreen() {
   const theme = useTheme();
+  const { t } = useLocale();
   const [scanState, setScanState] = useState<ScanState>({ phase: 'checking' });
-  const [scanCompletedToken, setScanCompletedToken] = useState(0);
-  const [scanResultStore, setScanResultStore] = useState<DraftStore | null>(null);
-  const activeScanId = useRef<string | null>(null);
+  const [draftSaveInFlight, setDraftSaveInFlight] = useState(false);
+  const activeScan = useRef<ActiveScan | null>(null);
+  const manualUnverified = useRef(false);
   const startRequested = useRef(false);
   const stopRequested = useRef(false);
   const exportInFlight = useRef(false);
+  const processingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const enterManual = useCallback((lidarAvailable: boolean) => {
-    stopRequested.current = false;
-    startRequested.current = false;
-    exportInFlight.current = false;
-    activeScanId.current = null;
-    setScanState({ phase: 'manual', lidarAvailable });
+  const clearProcessingTimeout = useCallback(() => {
+    if (processingTimeout.current !== null) {
+      clearTimeout(processingTimeout.current);
+      processingTimeout.current = null;
+    }
   }, []);
 
-  const checkSupport = useCallback(async () => {
-    stopRequested.current = false;
+  const enterManual = useCallback(
+    (lidarAvailable: boolean, forceUnverified = manualUnverified.current) => {
+      clearProcessingTimeout();
+      activeScan.current = null;
+      manualUnverified.current = forceUnverified;
+      stopRequested.current = false;
+      startRequested.current = false;
+      exportInFlight.current = false;
+      setScanState({
+        phase: 'manual',
+        lidarAvailable,
+        manualUnverified: forceUnverified,
+      });
+    },
+    [clearProcessingTimeout]
+  );
 
-    try {
-      const supported = await isSupported();
-      // Manual capture is always available; LiDAR is an optional path.
-      enterManual(supported);
-    } catch (error) {
-      setScanState({ phase: 'error', message: errorMessage(error) });
-    }
-  }, [enterManual]);
+  const showScanError = useCallback(
+    (
+      messageKey: Extract<
+        TranslationKey,
+        'scanInterrupted' | 'scanMeasureFailed' | 'scanDraftMissing'
+      >,
+      retryTarget: ScanTarget
+    ) => {
+      clearProcessingTimeout();
+      activeScan.current = null;
+      stopRequested.current = false;
+      startRequested.current = false;
+      exportInFlight.current = false;
+      setScanState({ phase: 'error', messageKey, retryTarget });
+    },
+    [clearProcessingTimeout]
+  );
+
+  const prepareScan = useCallback(
+    (target: ScanTarget) => {
+      clearProcessingTimeout();
+      const scan: ActiveScan = {
+        scanId: `scan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        target,
+      };
+      activeScan.current = scan;
+      stopRequested.current = false;
+      startRequested.current = false;
+      exportInFlight.current = false;
+      setScanState({ phase: 'ready', scan });
+    },
+    [clearProcessingTimeout]
+  );
+
+  const startProcessingTimeout = useCallback(
+    (scan: ActiveScan) => {
+      clearProcessingTimeout();
+      processingTimeout.current = setTimeout(() => {
+        processingTimeout.current = null;
+        if (
+          !shouldHandleProcessingTimeout({
+            activeScanId: activeScan.current?.scanId ?? null,
+            timeoutScanId: scan.scanId,
+            stopRequested: stopRequested.current,
+            exportInFlight: exportInFlight.current,
+          })
+        ) {
+          return;
+        }
+        showScanError('scanInterrupted', scan.target);
+        void cancelSession().catch(() => undefined);
+      }, SCAN_PROCESSING_TIMEOUT_MS);
+    },
+    [clearProcessingTimeout, showScanError]
+  );
+
+  const resetManualUnverified = useCallback(() => {
+    manualUnverified.current = false;
+    setScanState((current) =>
+      current.phase === 'manual'
+        ? { ...current, manualUnverified: false }
+        : current
+    );
+  }, []);
 
   const saveProcessedScan = useCallback(async () => {
-    const scanId = activeScanId.current;
-    if (!scanId || exportInFlight.current) {
+    const scan = activeScan.current;
+    if (!scan || !stopRequested.current || exportInFlight.current) {
       return;
     }
 
     exportInFlight.current = true;
+    clearProcessingTimeout();
     setScanState({ phase: 'processing' });
 
+    let exportedPaths: { jsonPath: string; usdzPath: string } | null = null;
     try {
-      const results = await exportResults(scanId);
-      const measuredSqftFromScan = await readMeasuredSqftFromExport(results);
-      if (measuredSqftFromScan == null) {
-        setScanState({
-          phase: 'error',
-          message:
-            'Scan saved, but sq ft could not be read. Scan the room again.',
-        });
+      const results = await exportResults(scan.scanId);
+      exportedPaths = results;
+      if (activeScan.current !== scan) {
+        await captureFileLifecycle.cleanupExportedScanPaths(results);
         return;
       }
-      // Guide UI is unmounted during scan — persist progress before remount.
-      const nextStore = await markActiveRoomScanned({ measuredSqftFromScan });
-      if (!nextStore) {
-        setScanState({
-          phase: 'error',
-          message:
-            'Could not save the scan to this job. Go back and start the job again.',
-        });
+      const measurement = await readVerifiedMeasurementFromExport(results);
+      if (activeScan.current !== scan) {
+        await captureFileLifecycle.cleanupExportedScanPaths(results);
         return;
       }
-      setScanResultStore(nextStore);
-      setScanCompletedToken((token) => token + 1);
-      // Return straight to the guided job (condition prompts), not a restart.
+      if (measurement === null) {
+        await captureFileLifecycle.cleanupExportedScanPaths(results);
+        showScanError('scanMeasureFailed', scan.target);
+        return;
+      }
+      const artifact: RoomScanArtifact = {
+        scanId: scan.scanId,
+        jsonPath: results.jsonPath,
+        usdzPath: results.usdzPath,
+        measuredSqft: measurement.measuredSqft,
+        source: measurement.source,
+        capturedAt: new Date().toISOString(),
+      };
+      const committed = await captureFileLifecycle.commitRoomScan({
+        draftId: scan.target.draftId,
+        roomId: scan.target.roomId,
+        artifact,
+      });
+      if (activeScan.current !== scan) {
+        return;
+      }
+      if (committed === null) {
+        showScanError('scanDraftMissing', scan.target);
+        return;
+      }
       enterManual(true);
-    } catch (error) {
-      setScanState({ phase: 'error', message: errorMessage(error) });
+    } catch {
+      if (exportedPaths) {
+        await captureFileLifecycle.cleanupExportedScanPaths(exportedPaths);
+      }
+      if (activeScan.current === scan) {
+        showScanError('scanInterrupted', scan.target);
+      }
     } finally {
-      exportInFlight.current = false;
+      if (activeScan.current === scan) {
+        exportInFlight.current = false;
+      }
     }
-  }, [enterManual]);
+  }, [clearProcessingTimeout, enterManual, showScanError]);
 
   useEffect(() => {
     let isMounted = true;
@@ -152,16 +258,20 @@ export default function WalkthroughScreen() {
       addProcessedListener(() => {
         void saveProcessedScan();
       }),
-      addErrorListener(({ message }) => {
-        stopRequested.current = false;
-        setScanState({ phase: 'error', message });
+      addErrorListener(() => {
+        const scan = activeScan.current;
+        if (scan) {
+          showScanError('scanInterrupted', scan.target);
+        }
       }),
     ];
 
     return () => {
+      clearProcessingTimeout();
+      activeScan.current = null;
       subscriptions.forEach((subscription) => subscription.remove());
     };
-  }, [saveProcessedScan]);
+  }, [clearProcessingTimeout, saveProcessedScan, showScanError]);
 
   useEffect(() => {
     if (scanState.phase !== 'scanning' || startRequested.current) {
@@ -169,18 +279,25 @@ export default function WalkthroughScreen() {
     }
 
     const frame = requestAnimationFrame(() => {
+      const scan = activeScan.current;
+      if (!scan) {
+        return;
+      }
       startRequested.current = true;
-      startSession().catch((error: unknown) => {
-        stopRequested.current = false;
-        setScanState({ phase: 'error', message: errorMessage(error) });
+      startSession().catch(() => {
+        if (activeScan.current === scan) {
+          showScanError('scanInterrupted', scan.target);
+        }
       });
     });
 
     return () => cancelAnimationFrame(frame);
-  }, [scanState.phase]);
+  }, [scanState.phase, showScanError]);
 
-  const beginScan = () => {
-    activeScanId.current = `scan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const beginScan = (scan: ActiveScan) => {
+    if (activeScan.current !== scan) {
+      return;
+    }
     startRequested.current = false;
     stopRequested.current = false;
     exportInFlight.current = false;
@@ -188,47 +305,39 @@ export default function WalkthroughScreen() {
   };
 
   const finishScan = async () => {
-    if (stopRequested.current) {
+    const scan = activeScan.current;
+    if (!scan || stopRequested.current) {
       return;
     }
 
     stopRequested.current = true;
     setScanState({ phase: 'processing' });
+    startProcessingTimeout(scan);
 
     try {
       await finishSession();
-    } catch (error) {
-      stopRequested.current = false;
-      setScanState({ phase: 'error', message: errorMessage(error) });
+    } catch {
+      if (activeScan.current === scan) {
+        showScanError('scanInterrupted', scan.target);
+      }
     }
   };
 
   const cancelScan = async () => {
-    if (stopRequested.current) {
+    const scan = activeScan.current;
+    if (!scan || stopRequested.current) {
       return;
     }
 
     stopRequested.current = true;
+    clearProcessingTimeout();
+    activeScan.current = null;
 
     try {
       await cancelSession();
       enterManual(true);
-    } catch (error) {
-      stopRequested.current = false;
-      setScanState({ phase: 'error', message: errorMessage(error) });
-    }
-  };
-
-  const shareResults = async (results: RoomScanExportResult) => {
-    try {
-      await share([results.usdzPath, results.jsonPath]);
-      setScanState({ phase: 'complete', results });
-    } catch (error) {
-      setScanState({
-        phase: 'complete',
-        results,
-        shareError: errorMessage(error),
-      });
+    } catch {
+      showScanError('scanInterrupted', scan.target);
     }
   };
 
@@ -245,7 +354,7 @@ export default function WalkthroughScreen() {
               <>
                 <View style={styles.instructionPill}>
                   <ThemedText type="smallBold" style={styles.overlayText}>
-                    Move slowly and capture every wall.
+                    {t('scanInstructions')}
                   </ThemedText>
                 </View>
                 <View style={styles.scanActions}>
@@ -258,7 +367,7 @@ export default function WalkthroughScreen() {
                       pressed && styles.buttonPressed,
                     ]}>
                     <ThemedText type="smallBold" style={styles.overlayText}>
-                      Cancel
+                      {t('scanCancel')}
                     </ThemedText>
                   </Pressable>
                   <Pressable
@@ -270,7 +379,7 @@ export default function WalkthroughScreen() {
                       pressed && styles.buttonPressed,
                     ]}>
                     <ThemedText type="smallBold" style={styles.overlayText}>
-                      Done
+                      {t('scanDone')}
                     </ThemedText>
                   </Pressable>
                 </View>
@@ -279,10 +388,10 @@ export default function WalkthroughScreen() {
               <View style={styles.processingCard}>
                 <ActivityIndicator color="#ffffff" size="large" />
                 <ThemedText type="smallBold" style={styles.overlayText}>
-                  Processing room scan…
+                  {t('scanProcessing')}
                 </ThemedText>
                 <ThemedText type="small" style={styles.processingSecondaryText}>
-                  Keep this screen open while RoomPlan builds the model.
+                  {t('scanKeepOpen')}
                 </ThemedText>
               </View>
             )}
@@ -294,14 +403,20 @@ export default function WalkthroughScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ gestureEnabled: true, headerShown: true }} />
+      <Stack.Screen
+        options={{
+          gestureEnabled: !draftSaveInFlight,
+          headerBackVisible: !draftSaveInFlight,
+          headerShown: true,
+        }}
+      />
       <ThemedView style={styles.container}>
         <SafeAreaView style={styles.safeArea} edges={['bottom', 'left', 'right']}>
           {scanState.phase === 'checking' && (
             <ThemedView type="backgroundElement" style={[styles.card, styles.centeredCard]}>
               <ActivityIndicator color={theme.accent} size="large" />
               <ThemedText type="small" themeColor="textSecondary">
-                Preparing walkthrough capture…
+                {t('scanPreparing')}
               </ThemedText>
             </ThemedView>
           )}
@@ -309,11 +424,15 @@ export default function WalkthroughScreen() {
           {scanState.phase === 'manual' && (
             <ManualWalkthrough
               lidarAvailable={scanState.lidarAvailable}
-              scanCompletedToken={scanCompletedToken}
-              scanResultStore={scanResultStore}
+              manualUnverified={scanState.manualUnverified}
+              onStartAnother={resetManualUnverified}
+              onSavingChange={setDraftSaveInFlight}
+              onShareScan={(artifact) =>
+                share([artifact.jsonPath, artifact.usdzPath])
+              }
               onOpenLidar={
                 scanState.lidarAvailable
-                  ? () => setScanState({ phase: 'ready' })
+                  ? prepareScan
                   : undefined
               }
             />
@@ -321,21 +440,20 @@ export default function WalkthroughScreen() {
 
           {scanState.phase === 'ready' && (
             <ThemedView type="backgroundElement" style={styles.card}>
-              <ThemedText type="heading">Room scan</ThemedText>
+              <ThemedText type="heading">{t('scanTitle')}</ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
-                Walk the room slowly so LiDAR can capture walls, openings, fixtures, and
-                furniture.
+                {t('scanInstructions')}
               </ThemedText>
               <Pressable
                 accessibilityRole="button"
-                onPress={beginScan}
+                onPress={() => beginScan(scanState.scan)}
                 style={({ pressed }) => [
                   styles.primaryButton,
                   { backgroundColor: theme.accent },
                   pressed && styles.buttonPressed,
                 ]}>
                 <ThemedText type="smallBold" style={styles.overlayText}>
-                  Start room scan
+                  {t('scanStart')}
                 </ThemedText>
               </Pressable>
               <Pressable
@@ -346,91 +464,40 @@ export default function WalkthroughScreen() {
                   { borderColor: theme.border },
                   pressed && styles.buttonPressed,
                 ]}>
-                <ThemedText type="smallBold">Back</ThemedText>
-              </Pressable>
-            </ThemedView>
-          )}
-
-          {scanState.phase === 'complete' && (
-            <ThemedView type="backgroundElement" style={styles.card}>
-              <ThemedText type="heading">Scan saved</ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
-                Continue the guided job for condition and photos.
-              </ThemedText>
-              <ThemedView style={styles.fileList}>
-                <ThemedText type="smallBold">{fileName(scanState.results.usdzPath)}</ThemedText>
-                <ThemedText type="smallBold">{fileName(scanState.results.jsonPath)}</ThemedText>
-              </ThemedView>
-              {scanState.shareError && (
-                <ThemedText type="small" style={{ color: theme.danger }}>
-                  {scanState.shareError}
-                </ThemedText>
-              )}
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => void shareResults(scanState.results)}
-                style={({ pressed }) => [
-                  styles.primaryButton,
-                  { backgroundColor: theme.accent },
-                  pressed && styles.buttonPressed,
-                ]}>
-                <ThemedText type="smallBold" style={styles.overlayText}>
-                  Share files
-                </ThemedText>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => enterManual(true)}
-                style={({ pressed }) => [
-                  styles.secondaryButton,
-                  { borderColor: theme.border },
-                  pressed && styles.buttonPressed,
-                ]}>
-                <ThemedText type="smallBold">Continue job</ThemedText>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                onPress={beginScan}
-                style={({ pressed }) => [
-                  styles.secondaryButton,
-                  { borderColor: theme.border },
-                  pressed && styles.buttonPressed,
-                ]}>
-                <ThemedText type="smallBold">Re-scan</ThemedText>
+                <ThemedText type="smallBold">{t('back')}</ThemedText>
               </Pressable>
             </ThemedView>
           )}
 
           {scanState.phase === 'error' && (
             <ThemedView type="backgroundElement" style={styles.card}>
-              <ThemedText type="heading">Scan interrupted</ThemedText>
+              <ThemedText type="heading">{t('scanErrorTitle')}</ThemedText>
               <ThemedText type="small" style={{ color: theme.danger }}>
-                {scanState.message}
+                {t(scanState.messageKey)}
               </ThemedText>
               <Pressable
                 accessibilityRole="button"
-                onPress={() => enterManual(true)}
+                onPress={() => prepareScan(scanState.retryTarget)}
                 style={({ pressed }) => [
                   styles.primaryButton,
                   { backgroundColor: theme.accent },
                   pressed && styles.buttonPressed,
                 ]}>
                 <ThemedText type="smallBold" style={styles.overlayText}>
-                  Continue with manual capture
+                  {t('scanRetry')}
                 </ThemedText>
               </Pressable>
               <Pressable
                 accessibilityRole="button"
-                onPress={() => {
-                  setScanState({ phase: 'checking' });
-                  void checkSupport();
-                }}
+                onPress={() => enterManual(true, true)}
                 style={({ pressed }) => [
                   styles.secondaryButton,
                   { borderColor: theme.border },
                   pressed && styles.buttonPressed,
                 ]}>
-                <ThemedText type="smallBold">Try LiDAR again</ThemedText>
+                <ThemedText type="smallBold">
+                  {t('continueUnverified')}
+                </ThemedText>
               </Pressable>
             </ThemedView>
           )}
@@ -530,11 +597,5 @@ const styles = StyleSheet.create({
   processingSecondaryText: {
     color: '#d7d9dd',
     textAlign: 'center',
-  },
-  fileList: {
-    gap: Spacing.one,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.three,
-    borderRadius: Spacing.two,
   },
 });
