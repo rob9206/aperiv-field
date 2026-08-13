@@ -2,8 +2,23 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Directory, File, Paths } from 'expo-file-system';
 
 import { parseDraftStoreRaw } from './draft-store-parse';
+import {
+  draftCanBeVerified,
+  normalizeDraftStore,
+} from './walkthrough-schema';
+import type { RoomScanArtifact } from './walkthrough-schema';
 
 export { isValidDraftStore, parseDraftStoreRaw } from './draft-store-parse';
+export {
+  draftCanBeVerified,
+  normalizeDraftStore,
+  roomHasVerifiedScan,
+  scanMeasuredSqft,
+} from './walkthrough-schema';
+export type {
+  RoomScanArtifact,
+  ScanMeasurementSource,
+} from './walkthrough-schema';
 
 export type RoomCondition = 'good' | 'watch' | 'issue';
 
@@ -45,6 +60,9 @@ export type RoomCapture = {
   /** Part chips when room is not Ready (carpet, paint, …). */
   issueParts?: string[];
   scanned?: boolean;
+  skipped?: boolean;
+  scanArtifact?: RoomScanArtifact;
+  /** Compatibility mirror; never use as verification source. */
   measuredSqftFromScan?: number;
 };
 
@@ -181,8 +199,9 @@ export async function loadDraftStore(): Promise<DraftStore> {
   try {
     const raw = await AsyncStorage.getItem(STORE_KEY);
     const parsed = parseDraftStoreRaw(raw);
-    if (parsed) {
-      return parsed as DraftStore;
+    const normalized = normalizeDraftStore(parsed);
+    if (normalized) {
+      return normalized;
     }
   } catch {
     // Corrupt or unreadable v2 — try legacy recovery next.
@@ -225,7 +244,6 @@ export async function markActiveRoomScanned(): Promise<DraftStore | null> {
   const rooms = draft.rooms.map((room, i) =>
     i === idx ? { ...room, scanned: true } : room
   );
-  const measuredTotal = measuredSqft(rooms);
   const next: DraftStore = {
     activeDraftId: activeId,
     drafts: {
@@ -233,8 +251,6 @@ export async function markActiveRoomScanned(): Promise<DraftStore | null> {
       [activeId]: {
         ...draft,
         rooms,
-        measuredSqftFromScan:
-          measuredTotal > 0 ? measuredTotal : draft.measuredSqftFromScan,
         guidePhase: 'condition',
         completedAt: undefined,
       },
@@ -307,18 +323,5 @@ export function recordedSqftValue(draft: ManualWalkthroughDraft): number | null 
 }
 
 export function draftHasScanMeasure(draft: ManualWalkthroughDraft): boolean {
-  if (
-    typeof draft.measuredSqftFromScan === 'number' &&
-    Number.isFinite(draft.measuredSqftFromScan) &&
-    draft.measuredSqftFromScan > 0
-  ) {
-    return true;
-  }
-  return draft.rooms.some(
-    (room) =>
-      room.scanned === true ||
-      (typeof room.measuredSqftFromScan === 'number' &&
-        Number.isFinite(room.measuredSqftFromScan) &&
-        room.measuredSqftFromScan > 0)
-  );
+  return draftCanBeVerified(draft);
 }
