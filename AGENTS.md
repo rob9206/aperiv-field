@@ -66,3 +66,33 @@ Supabase/env text on index or login, deduped titles, login has branding + themed
 errors. Still deferred by explicit scope decision: password reset + signup flows
 (need Supabase email/deep-link decisions) and any Supabase reads/writes.
 Build 11 requires a new native binary (expo-image-picker + expo-file-system added).
+
+## Cursor Cloud specific instructions
+
+Dependencies are refreshed on startup by the update script (`npm install`). Node 22 is
+already present (repo needs Node ≥ 22.6 for the test runner's TS type-stripping).
+
+Primary product is a native iOS app; its core feature (Apple RoomPlan LiDAR scan) only
+runs on a physical LiDAR iPhone/iPad and is built via EAS — it cannot run on this Linux
+VM. For local dev/verification here, use the **web target**:
+
+- Run: `npx expo start --web --port 8081` (Metro + react-native-web; first bundle is slow).
+- `modules/expo-room-scan` uses `requireOptionalNativeModule`, so on web/non-LiDAR the
+  walkthrough gracefully falls back to manual capture (no scanning). This is expected.
+
+Checks (no jest/vitest — tests use Node's built-in runner):
+
+- Lint: `npm run lint` (= `expo lint`). Note: currently reports one **pre-existing** error
+  in `src/components/manual-walkthrough.tsx` (`react-hooks/set-state-in-effect`) plus one
+  warning; the tooling itself works — do not treat this as an env failure.
+- Types: `npx tsc --noEmit` (clean).
+- Tests: `node --experimental-strip-types --test src/lib/*.test.ts` (and
+  `modules/expo-room-scan/src/*.test.ts` when present). CI (`.github/workflows/`) runs
+  lint + `tsc` but not these tests.
+
+Web "configured" mode: copy `.env.example` → `.env` and set `EXPO_PUBLIC_SUPABASE_URL` /
+`EXPO_PUBLIC_SUPABASE_ANON_KEY` so the app leaves "Sign-in is unavailable" mode and the
+`/login` screen renders. Format-valid placeholders are enough to reach the login UI, but
+live sign-in and the auth-gated `/walkthrough` screen need a real Supabase project. On
+web the home "Sign in" button label renders faint (white text on light bg) — a web-only
+styling nuance; it still navigates.
