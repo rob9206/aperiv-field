@@ -359,6 +359,65 @@ describe('draft store recovery', () => {
   });
 });
 
+describe('draft store cleanup trust state', () => {
+  it('marks unreadable v2 metadata degraded and recovery-pending', async () => {
+    const storage = memoryStorage({ [STORE_KEY]: '{corrupt' });
+    const repository = createDraftStoreRepository(storage);
+
+    const state = await repository.loadDraftStoreState();
+
+    assert.equal(state.degraded, true);
+    assert.equal(state.recoveryPending, true);
+    assert.equal(storage.values.get(STORE_BACKUP_KEY), '{corrupt');
+  });
+
+  it('marks normalization that prunes any draft as degraded', async () => {
+    const raw = JSON.stringify({
+      activeDraftId: 'valid',
+      drafts: {
+        valid: draft('valid'),
+        pruned: { id: 'pruned', unit: '2B' },
+      },
+    });
+    const storage = memoryStorage({ [STORE_KEY]: raw });
+    const repository = createDraftStoreRepository(storage);
+
+    const state = await repository.loadDraftStoreState();
+
+    assert.equal(state.degraded, true);
+    assert.equal(state.recoveryPending, true);
+    assert.deepEqual(Object.keys(state.store.drafts), ['valid']);
+    assert.equal(storage.values.get(STORE_BACKUP_KEY), raw);
+  });
+
+  it('keeps cleanup recovery-pending after a later normalized mutation', async () => {
+    const storage = memoryStorage({ [STORE_KEY]: '{corrupt' });
+    const repository = createDraftStoreRepository(storage);
+
+    await repository.mutateDraftStore(() => ({
+      store: store(draft('replacement')),
+      value: undefined,
+    }));
+    const state = await repository.loadDraftStoreState();
+
+    assert.equal(state.degraded, false);
+    assert.equal(state.recoveryPending, true);
+    assert.equal(storage.values.get(STORE_BACKUP_KEY), '{corrupt');
+  });
+
+  it('allows cleanup only for normalized metadata with no recovery backup', async () => {
+    const storage = memoryStorage({
+      [STORE_KEY]: JSON.stringify(store(draft('trusted'))),
+    });
+    const repository = createDraftStoreRepository(storage);
+
+    const state = await repository.loadDraftStoreState();
+
+    assert.equal(state.degraded, false);
+    assert.equal(state.recoveryPending, false);
+  });
+});
+
 describe('commitRoomScan', () => {
   it('never assigns a late scan to the newly active room', async () => {
     const initial = store(

@@ -12,6 +12,7 @@ import {
   type CaptureFileEntry,
 } from './capture-files.ts';
 import {
+  STORE_BACKUP_KEY,
   STORE_KEY,
   createDraftStoreRepository,
   type KeyValueStorage,
@@ -108,15 +109,26 @@ function memoryStorage(
 }
 
 function fakeAdapter(options: {
+  enabled?: boolean;
   events?: string[];
   entries?: Partial<Record<'scans' | 'photos', CaptureFileEntry[]>>;
+  rootTouches?: string[];
+  listTouches?: string[];
+  throwOnCopyNumber?: number;
   throwOnDelete?: boolean;
 } = {}): CaptureFileAdapter {
   let photoNumber = 0;
   return {
-    roots: { scans: scansRoot, photos: photosRoot },
+    enabled: options.enabled ?? true,
+    getRoots() {
+      options.rootTouches?.push('roots');
+      return { scans: scansRoot, photos: photosRoot };
+    },
     copyPhoto(draftId, sourceUri) {
       photoNumber += 1;
+      if (photoNumber === options.throwOnCopyNumber) {
+        throw new Error('copy failed');
+      }
       const copied = {
         id: `copied-${photoNumber}`,
         uri: `${photosRoot}/${draftId}/copied-${photoNumber}.jpg`,
@@ -137,6 +149,7 @@ function fakeAdapter(options: {
       }
     },
     listEntries(root) {
+      options.listTouches?.push(root);
       return root === scansRoot
         ? (options.entries?.scans ?? [])
         : (options.entries?.photos ?? []);
@@ -217,7 +230,71 @@ describe('capture path planning', () => {
   });
 });
 
+describe('capture service runtime safety', () => {
+  it('never constructs roots, lists, or deletes when disabled on web', () => {
+    const rootTouches: string[] = [];
+    const listTouches: string[] = [];
+    const events: string[] = [];
+    const service = createCaptureFileService(
+      fakeAdapter({
+        enabled: false,
+        events,
+        rootTouches,
+        listTouches,
+      })
+    );
+
+    service.deleteUnreferenced(
+      [`${scansRoot}/legacy/Room.json`],
+      store()
+    );
+    service.sweepOrphans(store());
+
+    assert.deepEqual(rootTouches, []);
+    assert.deepEqual(listTouches, []);
+    assert.deepEqual(events, []);
+  });
+
+  it('does not expose direct-delete methods that bypass committed truth', () => {
+    const service = createCaptureFileService(fakeAdapter());
+
+    assert.equal('deleteLocalFile' in service, false);
+    assert.equal('deleteScanArtifactFiles' in service, false);
+    assert.equal('deleteDraftCaptureFiles' in service, false);
+  });
+});
+
 describe('transactional photo lifecycle', () => {
+  it('reloads committed truth before compensating a partial copy failure', async () => {
+    const current = draft();
+    current.rooms[1].photos = [
+      photo('shared-copy', `${photosRoot}/draft-a/copied-1.jpg`),
+    ];
+    const events: string[] = [];
+    const lifecycle = createCaptureFileLifecycle(
+      createDraftStoreRepository(memoryStorage(store(current))),
+      createCaptureFileService(
+        fakeAdapter({ events, throwOnCopyNumber: 2 })
+      )
+    );
+
+    await assert.rejects(
+      lifecycle.addPhotos({
+        draftId: current.id,
+        roomId: 'living',
+        sourceUris: [
+          'file:///picker/first.jpg',
+          'file:///picker/second.jpg',
+        ],
+      }),
+      /copy failed/
+    );
+
+    assert.deepEqual(events, [
+      `copy:file:///picker/first.jpg->${photosRoot}/draft-a/copied-1.jpg`,
+    ]);
+  });
+
   it('deletes copied photos when the metadata commit rejects', async () => {
     const current = draft();
     current.rooms[0].photos = [photo('existing')];
@@ -582,10 +659,12 @@ describe('directory orphan recovery', () => {
     );
   });
 
-  it('enumerates both roots and applies a sweep idempotently', async () => {
+  it('policy B deletes pre-existing unlinked files on the first trusted sweep', async () => {
     const events: string[] = [];
+    const listTouches: string[] = [];
     const adapter = fakeAdapter({
       events,
+      listTouches,
       entries: {
         scans: [
           { kind: 'directory', uri: `${scansRoot}/lost` },
@@ -610,10 +689,74 @@ describe('directory orphan recovery', () => {
       `delete-file:${photosRoot}/lost/photo.jpg`,
       `delete-directory:${scansRoot}/lost`,
       `delete-directory:${photosRoot}/lost`,
-      `delete-file:${scansRoot}/lost/Room.json`,
-      `delete-file:${photosRoot}/lost/photo.jpg`,
-      `delete-directory:${scansRoot}/lost`,
-      `delete-directory:${photosRoot}/lost`,
     ]);
+    assert.deepEqual(listTouches, [scansRoot, photosRoot]);
+  });
+
+  it('does not construct roots or list files while recovery is pending', async () => {
+    const storage = memoryStorage(store());
+    storage.values.set(STORE_BACKUP_KEY, '{"drafts":{"held":{}}}');
+    const rootTouches: string[] = [];
+    const listTouches: string[] = [];
+    const events: string[] = [];
+    const lifecycle = createCaptureFileLifecycle(
+      createDraftStoreRepository(storage),
+      createCaptureFileService(
+        fakeAdapter({ events, rootTouches, listTouches })
+      )
+    );
+
+    await lifecycle.sweepOrphans({ force: true });
+
+    assert.deepEqual(rootTouches, []);
+    assert.deepEqual(listTouches, []);
+    assert.deepEqual(events, []);
+  });
+
+  it('forces a trusted sweep after deletion to remove empty owned directories', async () => {
+    const current = draft();
+    current.rooms[0].photos = [photo('one')];
+    current.rooms[0].scanArtifact = artifact('scan-1');
+    const listTouches: string[] = [];
+    const events: string[] = [];
+    const lifecycle = createCaptureFileLifecycle(
+      createDraftStoreRepository(memoryStorage(store(current))),
+      createCaptureFileService(
+        fakeAdapter({
+          events,
+          listTouches,
+          entries: {
+            scans: [
+              { kind: 'directory', uri: `${scansRoot}/scan-1` },
+              { kind: 'file', uri: `${scansRoot}/scan-1/Room.json` },
+              { kind: 'file', uri: `${scansRoot}/scan-1/Room.usdz` },
+            ],
+            photos: [
+              { kind: 'directory', uri: `${photosRoot}/draft-a` },
+              { kind: 'file', uri: `${photosRoot}/draft-a/one.jpg` },
+            ],
+          },
+        })
+      )
+    );
+
+    await lifecycle.sweepOrphans();
+    const committed = await lifecycle.deleteDraft(current.id);
+
+    assert.ok(committed);
+    assert.deepEqual(listTouches, [
+      scansRoot,
+      photosRoot,
+      scansRoot,
+      photosRoot,
+    ]);
+    assert.equal(
+      events.includes(`delete-directory:${scansRoot}/scan-1`),
+      true
+    );
+    assert.equal(
+      events.includes(`delete-directory:${photosRoot}/draft-a`),
+      true
+    );
   });
 });

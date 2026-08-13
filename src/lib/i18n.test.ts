@@ -22,6 +22,11 @@ describe('t', () => {
     assert.equal(t('es', 'newJob'), 'Nuevo trabajo');
   });
 
+  it('uses exact bilingual save-in-progress copy', () => {
+    assert.equal(t('en', 'saving'), 'Saving…');
+    assert.equal(t('es', 'saving'), 'Guardando…');
+  });
+
   it('localizes scan failures and the unverified escape hatch', () => {
     assert.equal(t('en', 'scanErrorTitle'), 'Room scan issue');
     assert.equal(t('es', 'scanErrorTitle'), 'Problema con el escaneo');
