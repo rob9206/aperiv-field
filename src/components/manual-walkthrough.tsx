@@ -32,10 +32,10 @@ import {
 import {
   createDraft,
   createRoom,
-  draftHasScanMeasure,
-  measuredSqft,
+  draftCanBeVerified,
   persistPhoto,
   recordedSqftValue,
+  roomHasVerifiedScan,
   scanMeasuredSqft,
   type DraftStore,
   type ManualWalkthroughDraft,
@@ -47,11 +47,15 @@ import { useLocale } from '@/providers/locale-provider';
 
 type ScreenStep = 'checkin' | 'roomGuide' | 'done';
 
+export type ScanTarget = {
+  draftId: string;
+  roomId: string;
+};
+
 type ManualWalkthroughProps = {
-  onOpenLidar?: () => void;
+  onOpenLidar?: (target: ScanTarget) => void;
   lidarAvailable?: boolean;
-  /** When parent finishes a RoomPlan session, mark current room scanned. */
-  scanCompletedToken?: number;
+  manualUnverified?: boolean;
 };
 
 const CONDITIONS: RoomCondition[] = ['good', 'watch', 'issue'];
@@ -131,7 +135,7 @@ function RoomSegments({
 export function ManualWalkthrough({
   onOpenLidar,
   lidarAvailable = false,
-  scanCompletedToken = 0,
+  manualUnverified = false,
 }: ManualWalkthroughProps) {
   const theme = useTheme();
   const { t, locale } = useLocale();
@@ -148,8 +152,6 @@ export function ManualWalkthrough({
   const [unitNumber, setUnitNumber] = useState('');
   const [recordedSqft, setRecordedSqft] = useState('');
 
-  const lastScanToken = useRef(0);
-
   const draft = store?.activeDraftId
     ? (store.drafts[store.activeDraftId] ?? null)
     : null;
@@ -158,11 +160,44 @@ export function ManualWalkthrough({
   const roomIndex = draft?.guideRoomIndex ?? 0;
   const room = draft?.rooms[roomIndex] ?? null;
   const nextRoom = draft?.rooms[roomIndex + 1] ?? null;
+  const roomVerified = room ? roomHasVerifiedScan(room) : false;
+  const previousRoomMeasurement =
+    !roomVerified &&
+    typeof room?.measuredSqftFromScan === 'number' &&
+    Number.isFinite(room.measuredSqftFromScan) &&
+    room.measuredSqftFromScan > 0
+      ? room.measuredSqftFromScan
+      : 0;
+  const lidarRequired = lidarAvailable && !manualUnverified;
 
   const measured = useMemo(
-    () => (draft ? measuredSqft(draft.rooms) : 0),
+    () => (draft ? scanMeasuredSqft(draft.rooms) : 0),
     [draft]
   );
+  const previousUnverifiedMeasured = useMemo(() => {
+    if (!draft) {
+      return 0;
+    }
+    const roomTotal = draft.rooms.reduce((sum, item) => {
+      const value = item.measuredSqftFromScan;
+      return !roomHasVerifiedScan(item) &&
+        typeof value === 'number' &&
+        Number.isFinite(value) &&
+        value > 0
+        ? sum + value
+        : sum;
+    }, 0);
+    if (roomTotal > 0) {
+      return roomTotal;
+    }
+    const draftValue = draft.measuredSqftFromScan;
+    return !draftCanBeVerified(draft) &&
+      typeof draftValue === 'number' &&
+      Number.isFinite(draftValue) &&
+      draftValue > 0
+      ? draftValue
+      : 0;
+  }, [draft]);
   const recorded = draft ? recordedSqftValue(draft) : null;
 
   const inputStyle = {
@@ -347,51 +382,6 @@ export function ManualWalkthrough({
       });
   };
 
-  useEffect(() => {
-    if (!scanCompletedToken || scanCompletedToken === lastScanToken.current) {
-      return;
-    }
-    lastScanToken.current = scanCompletedToken;
-    const current = storeRef.current;
-    const activeId = current?.activeDraftId;
-    const active = current && activeId ? current.drafts[activeId] : null;
-    if (!current || !active) {
-      return;
-    }
-    const idx = active.guideRoomIndex ?? 0;
-    const roomId = active.rooms[idx]?.id;
-    if (!roomId) {
-      return;
-    }
-    void mutateDraftById(active.id, (latest) => {
-      const roomExists = latest.rooms.some((item) => item.id === roomId);
-      if (!roomExists) {
-        return null;
-      }
-      return {
-        draft: {
-          ...latest,
-          rooms: latest.rooms.map((item) =>
-            item.id === roomId ? { ...item, scanned: true } : item
-          ),
-          guidePhase: 'room',
-          completedAt: undefined,
-        },
-        value: undefined,
-      };
-    })
-      .then((committed) => {
-        if (committed) {
-          storeRef.current = committed.store;
-          setStore(committed.store);
-          setScreenStep('roomGuide');
-        }
-      })
-      .catch(() => {
-        setHydrateError(t('saveFailed'));
-      });
-  }, [scanCompletedToken, t]);
-
   const addPhoto = async (source: 'camera' | 'library') => {
     const current = storeRef.current;
     const draftId = current?.activeDraftId;
@@ -479,7 +469,7 @@ export function ManualWalkthrough({
     if (!draft || !room) {
       return;
     }
-    const block = canAdvanceRoom(room, lidarAvailable);
+    const block = canAdvanceRoom(room, lidarRequired);
     if (block === 'photo') {
       setPhotoError(t('photoRequired'));
       return;
@@ -500,7 +490,7 @@ export function ManualWalkthrough({
         return null;
       }
       const latestRoom = latest.rooms[latestIndex];
-      const latestBlock = canAdvanceRoom(latestRoom, lidarAvailable);
+      const latestBlock = canAdvanceRoom(latestRoom, lidarRequired);
       if (latestBlock !== 'ok') {
         return {
           draft: latest,
@@ -626,7 +616,10 @@ export function ManualWalkthrough({
     }
     void persistDraftMutation(draft.id, (latest) => {
       const verifiedOk =
-        status === 'verified' && draftHasScanMeasure(latest) && lidarAvailable;
+        status === 'verified' &&
+        draftCanBeVerified(latest) &&
+        lidarAvailable &&
+        !manualUnverified;
       const totalMeasured = scanMeasuredSqft(latest.rooms);
       return {
         ...latest,
@@ -643,9 +636,11 @@ export function ManualWalkthrough({
     });
   };
 
-  const scannedCount = draft
-    ? draft.rooms.filter((item) => item.scanned).length
-    : 0;
+  const canSaveVerified =
+    !!draft &&
+    lidarAvailable &&
+    !manualUnverified &&
+    draftCanBeVerified(draft);
 
   const showGuideBack =
     screenStep === 'roomGuide' ||
@@ -783,9 +778,15 @@ export function ManualWalkthrough({
               {room.name || t('rooms')}
             </ThemedText>
 
+            {manualUnverified ? (
+              <ThemedText type="default" style={{ color: theme.warning }}>
+                {t('manualUnverifiedNotice')}
+              </ThemedText>
+            ) : null}
+
             {lidarAvailable ? (
               <View style={styles.section}>
-                {room.scanned ? (
+                {roomVerified ? (
                   <View
                     style={[
                       styles.scanDoneRow,
@@ -793,13 +794,14 @@ export function ManualWalkthrough({
                     ]}>
                     <ThemedText type="default" style={styles.scanDoneLabel}>
                       ✓{' '}
-                      {room.measuredSqftFromScan
-                        ? `${Math.round(room.measuredSqftFromScan)}`
-                        : t('roomsScanned')}
+                      {Math.round(room.scanArtifact!.measuredSqft)}{' '}
+                      {t('squareFeetShort')}
                     </ThemedText>
                     <Pressable
                       accessibilityRole="button"
-                      onPress={() => onOpenLidar?.()}
+                      onPress={() =>
+                        onOpenLidar?.({ draftId: draft.id, roomId: room.id })
+                      }
                       style={[
                         styles.againChip,
                         { borderColor: theme.accent },
@@ -815,10 +817,21 @@ export function ManualWalkthrough({
                   <>
                     <GuideButton
                       label={t('scanRoom')}
-                      onPress={() => onOpenLidar?.()}
+                      onPress={() =>
+                        onOpenLidar?.({ draftId: draft.id, roomId: room.id })
+                      }
                       accent={theme.accent}
                       onAccent={theme.onAccent}
                     />
+                    {previousRoomMeasurement > 0 ? (
+                      <ThemedText
+                        type="smallBold"
+                        style={[styles.centerHint, { color: theme.warning }]}>
+                        {t('previousUnverifiedMeasurement')}:{' '}
+                        {Math.round(previousRoomMeasurement)}{' '}
+                        {t('squareFeetShort')}
+                      </ThemedText>
+                    ) : null}
                     <ThemedText
                       type="small"
                       themeColor="textSecondary"
@@ -1066,17 +1079,20 @@ export function ManualWalkthrough({
                     {t('measuredSqftLabel')}
                   </ThemedText>
                   <ThemedText type="heading" style={styles.measureLine}>
-                    {measured > 0
-                      ? Math.round(measured)
-                      : scannedCount > 0
-                        ? `${scannedCount}`
-                        : '—'}
+                    {measured > 0 ? Math.round(measured) : '—'}
                   </ThemedText>
                 </View>
               </View>
-              {measured === 0 && scannedCount === 0 ? (
+              {measured === 0 ? (
                 <ThemedText type="default" themeColor="textSecondary">
                   {t('measuredPending')}
+                </ThemedText>
+              ) : null}
+              {previousUnverifiedMeasured > 0 ? (
+                <ThemedText type="smallBold" style={{ color: theme.warning }}>
+                  {t('previousUnverifiedMeasurement')}:{' '}
+                  {Math.round(previousUnverifiedMeasured)}{' '}
+                  {t('squareFeetShort')}
                 </ThemedText>
               ) : null}
             </View>
@@ -1087,7 +1103,7 @@ export function ManualWalkthrough({
             ) : null}
             {!draft.completedAt ? (
               <>
-                {lidarAvailable && draftHasScanMeasure(draft) ? (
+                {canSaveVerified ? (
                   <GuideButton
                     label={t('saveVerified')}
                     onPress={() => saveJob('verified')}
@@ -1097,14 +1113,12 @@ export function ManualWalkthrough({
                 ) : null}
                 <GuideButton
                   label={
-                    lidarAvailable && draftHasScanMeasure(draft)
-                      ? t('saveJob')
-                      : t('saveUnverified')
+                    canSaveVerified ? t('saveJob') : t('saveUnverified')
                   }
                   onPress={() => saveJob('unverified')}
                   accent={theme.accent}
                   onAccent={theme.onAccent}
-                  secondary={lidarAvailable && draftHasScanMeasure(draft)}
+                  secondary={canSaveVerified}
                   border={theme.border}
                 />
               </>

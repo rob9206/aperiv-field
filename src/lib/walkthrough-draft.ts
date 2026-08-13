@@ -9,7 +9,6 @@ export {
   STORE_KEY,
   commitRoomScan,
   loadDraftStore,
-  markActiveRoomScanned,
   mutateDraftById,
   mutateDraftStore,
 } from './draft-store';
