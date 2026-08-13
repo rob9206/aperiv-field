@@ -94,8 +94,8 @@ describe('parseDraftStoreRaw', () => {
 
 describe('room detail edits', () => {
   it('preserves an explicit room skip across notes, condition, and part edits', async () => {
-    const modulePath = './walkthrough-draft.ts';
-    const walkthrough = await import(modulePath);
+    const modulePath = './room-details.ts';
+    const walkthrough = await import(modulePath).catch(() => ({}));
     const patchRoomDetails = (
       walkthrough as unknown as {
         patchRoomDetails?: (
