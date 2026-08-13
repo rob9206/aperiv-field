@@ -88,6 +88,87 @@ describe('normalizeDraftStore', () => {
     assert.equal(saved.verificationStatus, 'unverified');
   });
 
+  it('salvages valid nested data when optional entries and fields are malformed', () => {
+    const salvageable = draft();
+    const malformedRoom = salvageable.rooms[0] as unknown as Record<
+      string,
+      unknown
+    >;
+    malformedRoom.photos = [
+      ...salvageable.rooms[0].photos,
+      { id: 'bad-photo', uri: 42 },
+    ];
+    malformedRoom.scanArtifact = {
+      ...artifact(),
+      capturedAt: '2026-08-11T20:00:00-04:00',
+    };
+    malformedRoom.hasDamage = 'yes';
+    malformedRoom.issueParts = [42];
+    malformedRoom.skipped = 'yes';
+    malformedRoom.measuredSqftFromScan = Number.NaN;
+    (salvageable as unknown as Record<string, unknown>).findings = [
+      ...salvageable.findings,
+      {
+        id: 'bad-finding',
+        severity: 'urgent',
+        title: 'Bad',
+        body: 'Bad',
+      },
+    ];
+    (salvageable as unknown as Record<string, unknown>).completedAt =
+      '2026-08-11T21:00:00-04:00';
+    (salvageable as unknown as Record<string, unknown>).guidePhase = 'unknown';
+    (salvageable as unknown as Record<string, unknown>).measuredSqftFromScan =
+      Number.NaN;
+    (salvageable as unknown as Record<string, unknown>).verificationStatus =
+      'unknown';
+
+    const normalized = normalizeDraftStore({
+      activeDraftId: salvageable.id,
+      drafts: { [salvageable.id]: salvageable },
+    });
+
+    assert.ok(normalized);
+    const saved = normalized.drafts[salvageable.id];
+    assert.deepEqual(saved.rooms[0].photos, [salvageable.rooms[0].photos[0]]);
+    assert.deepEqual(saved.findings, [salvageable.findings[0]]);
+    assert.equal(saved.rooms[0].scanArtifact, undefined);
+    assert.equal(saved.rooms[0].scanned, false);
+    assert.equal(saved.rooms[0].hasDamage, false);
+    assert.deepEqual(saved.rooms[0].issueParts, []);
+    assert.equal(saved.rooms[0].skipped, false);
+    assert.equal(saved.rooms[0].measuredSqftFromScan, undefined);
+    assert.equal(saved.completedAt, undefined);
+    assert.equal(saved.guidePhase, 'room');
+    assert.equal(saved.measuredSqftFromScan, undefined);
+    assert.equal(saved.verificationStatus, 'unverified');
+  });
+
+  it('treats a missing active ID as null and re-keys embedded draft IDs', () => {
+    const mismatched = draft('embedded-id');
+    const normalized = normalizeDraftStore({
+      drafts: { 'record-key': mismatched },
+    });
+
+    assert.ok(normalized);
+    assert.equal(normalized.activeDraftId, null);
+    assert.deepEqual(Object.keys(normalized.drafts), ['record-key']);
+    assert.equal(normalized.drafts['record-key'].id, 'record-key');
+  });
+
+  it('requires canonical ISO timestamps for required dates', () => {
+    const nonCanonical = draft();
+    nonCanonical.createdAt = '2026-08-11T20:00:00-04:00';
+
+    assert.equal(
+      normalizeDraftStore({
+        activeDraftId: nonCanonical.id,
+        drafts: { [nonCanonical.id]: nonCanonical },
+      }),
+      null
+    );
+  });
+
   it('preserves valid nested capture data and complete verification', () => {
     const validDraft = draft();
     const normalized = normalizeDraftStore({
@@ -106,22 +187,13 @@ describe('normalizeDraftStore', () => {
     assert.equal(saved.verificationStatus, 'verified');
   });
 
-  it('drops malformed drafts while retaining valid siblings', () => {
+  it('drops drafts with malformed required data while retaining valid siblings', () => {
     const invalidValues: ((value: ReturnType<typeof draft>) => void)[] = [
       (value) => {
         value.createdAt = 'not-a-date';
       },
       (value) => {
         value.rooms[0].condition = 'broken' as 'watch';
-      },
-      (value) => {
-        value.rooms[0].photos[0].uri = 42 as unknown as string;
-      },
-      (value) => {
-        value.findings[0].severity = 'urgent' as 'medium';
-      },
-      (value) => {
-        value.rooms[0].scanArtifact!.measuredSqft = Number.NaN;
       },
     ];
 

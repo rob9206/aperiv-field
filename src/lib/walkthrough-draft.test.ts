@@ -87,20 +87,28 @@ describe('parseDraftStoreRaw', () => {
 });
 
 describe('scan verification', () => {
-  const artifact = (measuredSqft: number): RoomScanArtifact => ({
+  const artifact = (
+    measuredSqft: number,
+    overrides: Partial<RoomScanArtifact> = {}
+  ): RoomScanArtifact => ({
     scanId: 'scan-1',
     jsonPath: '/scan/Room.json',
     usdzPath: '/scan/Room.usdz',
     measuredSqft,
     source: 'roomplan-floor-polygon',
     capturedAt: '2026-08-12T00:00:00.000Z',
+    ...overrides,
   });
 
   it('requires every room and rejects skipped rooms', () => {
     const draft = createDraft('Oak', '1A', '1000', ['Living', 'Kitchen']);
     draft.rooms[0].scanArtifact = artifact(100);
     assert.equal(draftCanBeVerified(draft), false);
-    draft.rooms[1].scanArtifact = artifact(80);
+    draft.rooms[1].scanArtifact = artifact(80, {
+      scanId: 'scan-2',
+      jsonPath: '/scan/Kitchen.json',
+      usdzPath: '/scan/Kitchen.usdz',
+    });
     assert.equal(draftCanBeVerified(draft), true);
     draft.rooms[1].skipped = true;
     assert.equal(draftCanBeVerified(draft), false);
@@ -120,6 +128,42 @@ describe('scan verification', () => {
       ...artifact(100),
       source: 'wall-estimate',
     };
+    assert.equal(draftCanBeVerified(draft), false);
+  });
+
+  it('rejects zero, negative, oversized, and unsafe artifacts', () => {
+    const draft = createDraft('Oak', '1A', '', ['Living']);
+    for (const measuredSqft of [0, -1, 2_000.01]) {
+      draft.rooms[0].scanArtifact = artifact(measuredSqft);
+      assert.equal(draftCanBeVerified(draft), false);
+    }
+
+    draft.rooms[0].scanArtifact = artifact(100, { scanId: ' ' });
+    assert.equal(draftCanBeVerified(draft), false);
+    draft.rooms[0].scanArtifact = artifact(100, {
+      jsonPath: '/scan/../Room.json',
+    });
+    assert.equal(draftCanBeVerified(draft), false);
+    draft.rooms[0].scanArtifact = artifact(100, {
+      capturedAt: '2026-08-11T20:00:00-04:00',
+    });
+    assert.equal(draftCanBeVerified(draft), false);
+  });
+
+  it('rejects duplicate scan IDs and JSON paths across rooms', () => {
+    const draft = createDraft('Oak', '1A', '', ['Living', 'Kitchen']);
+    draft.rooms[0].scanArtifact = artifact(100);
+    draft.rooms[1].scanArtifact = artifact(80, {
+      scanId: 'scan-2',
+      jsonPath: '/scan/Kitchen.json',
+      usdzPath: '/scan/Kitchen.usdz',
+    });
+    assert.equal(draftCanBeVerified(draft), true);
+
+    draft.rooms[1].scanArtifact.scanId = 'scan-1';
+    assert.equal(draftCanBeVerified(draft), false);
+    draft.rooms[1].scanArtifact.scanId = 'scan-2';
+    draft.rooms[1].scanArtifact.jsonPath = '/scan/Room.json';
     assert.equal(draftCanBeVerified(draft), false);
   });
 });
