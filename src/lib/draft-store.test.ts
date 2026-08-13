@@ -69,6 +69,7 @@ function artifact(
 function memoryStorage(
   initial: Record<string, string> = {},
   hooks: {
+    beforeGet?: (key: string) => Promise<void> | void;
     beforeSet?: (key: string, value: string) => Promise<void> | void;
     beforeRemove?: (key: string) => Promise<void> | void;
   } = {}
@@ -77,6 +78,7 @@ function memoryStorage(
   return {
     values,
     async getItem(key) {
+      await hooks.beforeGet?.(key);
       return values.get(key) ?? null;
     },
     async setItem(key, value) {
@@ -141,6 +143,57 @@ describe('draft store mutation queue', () => {
 
     assert.equal(committed?.value, 'ok');
     assert.equal(committed?.store.drafts.a.unit, 'saved');
+  });
+
+  it('continues processing after a queued read rejects', async () => {
+    let rejectNextRead = true;
+    const storage = memoryStorage(
+      { [STORE_KEY]: JSON.stringify(store(draft('a'))) },
+      {
+        beforeGet(key) {
+          if (key === STORE_KEY && rejectNextRead) {
+            rejectNextRead = false;
+            throw new Error('read failed');
+          }
+        },
+      }
+    );
+    const repository = createDraftStoreRepository(storage);
+
+    await assert.rejects(repository.loadDraftStore(), /read failed/);
+    const committed = await repository.mutateDraftById('a', (current) => ({
+      draft: { ...current, unit: 'recovered' },
+      value: 'ok',
+    }));
+
+    assert.equal(committed?.value, 'ok');
+    assert.equal(committed?.store.drafts.a.unit, 'recovered');
+  });
+
+  it('continues processing after a backup write rejects', async () => {
+    let rejectNextBackup = true;
+    const storage = memoryStorage(
+      { [STORE_KEY]: '{corrupt' },
+      {
+        beforeSet(key) {
+          if (key === STORE_BACKUP_KEY && rejectNextBackup) {
+            rejectNextBackup = false;
+            throw new Error('backup failed');
+          }
+        },
+      }
+    );
+    const repository = createDraftStoreRepository(storage);
+
+    await assert.rejects(repository.loadDraftStore(), /backup failed/);
+    const committed = await repository.mutateDraftStore(() => ({
+      store: store(draft('recovered')),
+      value: 'ok',
+    }));
+
+    assert.equal(committed?.value, 'ok');
+    assert.equal(committed?.store.drafts.recovered.unit, 'recovered');
+    assert.equal(storage.values.get(STORE_BACKUP_KEY), '{corrupt');
   });
 
   it('normalizes and recomputes verification on every write', async () => {
@@ -283,6 +336,27 @@ describe('draft store recovery', () => {
 
     assert.equal(storage.values.get(STORE_BACKUP_KEY), '{first-corrupt');
   });
+
+  it('backs up a v2 payload before a mutation writes its salvaged subset', async () => {
+    const raw = JSON.stringify({
+      activeDraftId: 'invalid',
+      drafts: {
+        valid: draft('valid'),
+        invalid: { id: 'invalid', unit: '2B' },
+      },
+    });
+    const storage = memoryStorage({ [STORE_KEY]: raw });
+    const repository = createDraftStoreRepository(storage);
+
+    const committed = await repository.mutateDraftById('valid', (current) => ({
+      draft: { ...current, unit: 'saved' },
+      value: undefined,
+    }));
+
+    assert.equal(storage.values.get(STORE_BACKUP_KEY), raw);
+    assert.deepEqual(Object.keys(committed!.store.drafts), ['valid']);
+    assert.equal(committed!.store.drafts.valid.unit, 'saved');
+  });
 });
 
 describe('commitRoomScan', () => {
@@ -354,19 +428,66 @@ describe('commitRoomScan', () => {
     assert.equal(committed?.store.drafts.a.completedAt, undefined);
   });
 
+  it('does not replace live files when the same artifact paths are recommitted', async () => {
+    const existing = draft('a', ['living']);
+    existing.rooms[0] = {
+      ...existing.rooms[0],
+      scanned: true,
+      scanArtifact: artifact(100),
+      measuredSqftFromScan: 100,
+    };
+    const storage = memoryStorage({
+      [STORE_KEY]: JSON.stringify(store(existing)),
+    });
+    const repository = createDraftStoreRepository(storage);
+
+    const committed = await repository.commitRoomScan({
+      draftId: 'a',
+      roomId: 'living',
+      artifact: artifact(100),
+    });
+
+    assert.ok(committed);
+    assert.equal(committed.replaced, undefined);
+    assert.deepEqual(
+      committed.store.drafts.a.rooms[0].scanArtifact,
+      artifact(100)
+    );
+  });
+
   it('rejects artifacts that cannot safely verify the room', async () => {
     const storage = memoryStorage({
       [STORE_KEY]: JSON.stringify(store(draft('a', ['room-a']))),
     });
     const repository = createDraftStoreRepository(storage);
-    const invalidArtifacts: RoomScanArtifact[] = [
-      artifact(0),
-      artifact(2_000.01),
-      artifact(100, { scanId: '../unsafe' }),
-      artifact(100, { jsonPath: '/scan/../Room.json' }),
-      artifact(100, { usdzPath: '/scan/../Room.usdz' }),
-      artifact(100, { capturedAt: '2026-08-11T20:00:00-04:00' }),
-      artifact(100, { source: 'wall-estimate' }),
+    const invalidArtifacts: {
+      caseName: string;
+      artifact: RoomScanArtifact;
+    }[] = [
+      { caseName: 'zero square feet', artifact: artifact(0) },
+      { caseName: 'over 2,000 square feet', artifact: artifact(2_000.01) },
+      {
+        caseName: 'unsafe scan ID',
+        artifact: artifact(100, { scanId: '../unsafe' }),
+      },
+      {
+        caseName: 'unsafe JSON path',
+        artifact: artifact(100, { jsonPath: '/scan/../Room.json' }),
+      },
+      {
+        caseName: 'unsafe USDZ path',
+        artifact: artifact(100, { usdzPath: '/scan/../Room.usdz' }),
+      },
+      {
+        caseName: 'noncanonical capture time',
+        artifact: artifact(100, {
+          capturedAt: '2026-08-11T20:00:00-04:00',
+        }),
+      },
+      {
+        caseName: 'non-verifying source',
+        artifact: artifact(100, { source: 'wall-estimate' }),
+      },
     ];
 
     for (const invalidArtifact of invalidArtifacts) {
@@ -374,9 +495,10 @@ describe('commitRoomScan', () => {
         await repository.commitRoomScan({
           draftId: 'a',
           roomId: 'room-a',
-          artifact: invalidArtifact,
+          artifact: invalidArtifact.artifact,
         }),
-        null
+        null,
+        invalidArtifact.caseName
       );
     }
 
@@ -385,7 +507,7 @@ describe('commitRoomScan', () => {
     assert.equal(saved.drafts.a.rooms[0].scanned, false);
   });
 
-  it('rejects scan IDs and JSON paths already committed to another room', async () => {
+  it('rejects artifact identities already committed to another room', async () => {
     const existing = draft('a', ['living', 'kitchen']);
     existing.rooms[0] = {
       ...existing.rooms[0],
@@ -416,6 +538,17 @@ describe('commitRoomScan', () => {
         artifact: artifact(80, {
           scanId: 'scan-2',
           usdzPath: '/scan/Kitchen.usdz',
+        }),
+      }),
+      null
+    );
+    assert.equal(
+      await repository.commitRoomScan({
+        draftId: 'a',
+        roomId: 'kitchen',
+        artifact: artifact(80, {
+          scanId: 'scan-2',
+          jsonPath: '/scan/Kitchen.json',
         }),
       }),
       null

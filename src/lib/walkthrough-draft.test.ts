@@ -155,7 +155,7 @@ describe('scan verification', () => {
     assert.equal(draftCanBeVerified(draft), false);
   });
 
-  it('rejects duplicate scan IDs and JSON paths across rooms', () => {
+  it('rejects duplicate scan IDs and artifact paths across rooms', () => {
     const draft = createDraft('Oak', '1A', '', ['Living', 'Kitchen']);
     draft.rooms[0].scanArtifact = artifact(100);
     draft.rooms[1].scanArtifact = artifact(80, {
@@ -169,6 +169,9 @@ describe('scan verification', () => {
     assert.equal(draftCanBeVerified(draft), false);
     draft.rooms[1].scanArtifact.scanId = 'scan-2';
     draft.rooms[1].scanArtifact.jsonPath = '/scan/Room.json';
+    assert.equal(draftCanBeVerified(draft), false);
+    draft.rooms[1].scanArtifact.jsonPath = '/scan/Kitchen.json';
+    draft.rooms[1].scanArtifact.usdzPath = '/scan/Room.usdz';
     assert.equal(draftCanBeVerified(draft), false);
   });
 });
