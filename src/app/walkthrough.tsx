@@ -57,17 +57,23 @@ export default function WalkthroughScreen() {
   const { t } = useLocale();
   const [scanState, setScanState] = useState<ScanState>({ phase: 'checking' });
   const activeScan = useRef<ActiveScan | null>(null);
+  const manualUnverified = useRef(false);
   const startRequested = useRef(false);
   const stopRequested = useRef(false);
   const exportInFlight = useRef(false);
 
   const enterManual = useCallback(
-    (lidarAvailable: boolean, manualUnverified = false) => {
+    (lidarAvailable: boolean, forceUnverified = manualUnverified.current) => {
       activeScan.current = null;
+      manualUnverified.current = forceUnverified;
       stopRequested.current = false;
       startRequested.current = false;
       exportInFlight.current = false;
-      setScanState({ phase: 'manual', lidarAvailable, manualUnverified });
+      setScanState({
+        phase: 'manual',
+        lidarAvailable,
+        manualUnverified: forceUnverified,
+      });
     },
     []
   );
