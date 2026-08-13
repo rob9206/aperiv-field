@@ -62,6 +62,7 @@ const en = {
   scanRetry: 'Try LiDAR again',
   continueUnverified: 'Continue unverified',
   shareScanFiles: 'Share scan files',
+  shareScanFailed: 'Could not share the scan files. Please try again.',
   previousUnverifiedMeasurement: 'Previous measurement — Unverified',
   squareFeetShort: 'sq ft',
   manualUnverifiedNotice:
@@ -188,6 +189,8 @@ const es: { [K in keyof typeof en]: string } = {
   scanRetry: 'Intentar LiDAR de nuevo',
   continueUnverified: 'Continuar sin verificar',
   shareScanFiles: 'Compartir archivos del escaneo',
+  shareScanFailed:
+    'No se pudieron compartir los archivos del escaneo. Inténtalo de nuevo.',
   previousUnverifiedMeasurement: 'Medición anterior — Sin verificar',
   squareFeetShort: 'pies²',
   manualUnverifiedNotice:

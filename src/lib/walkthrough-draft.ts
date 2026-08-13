@@ -1,5 +1,3 @@
-import { Directory, File, Paths } from 'expo-file-system';
-
 import type { RoomScanArtifact } from './walkthrough-schema';
 
 export { isValidDraftStore, parseDraftStoreRaw } from './draft-store-parse';
@@ -7,6 +5,7 @@ export {
   LEGACY_DRAFT_KEY,
   STORE_KEY,
   commitRoomScan,
+  completeDraft,
   loadDraftStore,
   mutateDraftById,
   mutateDraftStore,
@@ -14,6 +13,8 @@ export {
 export type {
   CommitRoomScanInput,
   CommitRoomScanResult,
+  CompleteDraftInput,
+  CompleteDraftResult,
   DraftMutation,
   DraftStoreMutation,
   DraftStoreRepository,
@@ -97,8 +98,6 @@ export type DraftStore = {
   drafts: Record<string, ManualWalkthroughDraft>;
 };
 
-const PHOTOS_DIR = 'walkthrough-photos';
-
 export const DEFAULT_ROOM_NAMES = ['Living', 'Kitchen', 'Bedroom', 'Bathroom'];
 
 export function newId(prefix: string): string {
@@ -136,48 +135,6 @@ export function createDraft(
     guidePhase: 'room',
     verificationStatus: 'unverified',
   };
-}
-
-function draftPhotosDirectory(draftId: string): Directory {
-  return new Directory(Paths.document, PHOTOS_DIR, draftId);
-}
-
-export function persistPhoto(draftId: string, sourceUri: string): RoomPhoto {
-  const root = new Directory(Paths.document, PHOTOS_DIR);
-  if (!root.exists) {
-    root.create();
-  }
-  const dir = draftPhotosDirectory(draftId);
-  if (!dir.exists) {
-    dir.create();
-  }
-  const id = newId('photo');
-  const extension = /\.(\w+)$/.exec(sourceUri)?.[1] ?? 'jpg';
-  const destination = new File(dir, `${id}.${extension}`);
-  new File(sourceUri).copy(destination);
-  return { id, uri: destination.uri };
-}
-
-export function deletePhotoFile(uri: string): void {
-  try {
-    const file = new File(uri);
-    if (file.exists) {
-      file.delete();
-    }
-  } catch {
-    // A missing photo file should never block editing the draft.
-  }
-}
-
-export function deleteDraftPhotos(draftId: string): void {
-  try {
-    const dir = draftPhotosDirectory(draftId);
-    if (dir.exists) {
-      dir.delete();
-    }
-  } catch {
-    // Orphaned photo files are preferable to a failed draft delete.
-  }
 }
 
 export function totalPhotos(rooms: RoomCapture[]): number {

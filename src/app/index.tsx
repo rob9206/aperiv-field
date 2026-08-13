@@ -9,6 +9,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MinTouchTarget, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { captureFileLifecycle } from '@/lib/capture-files.native';
 import { loadDraftStore, mutateDraftStore } from '@/lib/draft-store';
 import { type DraftStore } from '@/lib/walkthrough-draft';
 import { useAuth } from '@/providers/auth-provider';
@@ -23,8 +24,12 @@ export default function HomeScreen() {
   const [hasSaveError, setHasSaveError] = useState(false);
 
   const refreshStore = useCallback(() => {
-    void loadDraftStore().then(setStore, () =>
-      setStore({ activeDraftId: null, drafts: {} })
+    void loadDraftStore().then(
+      (next) => {
+        setStore(next);
+        void captureFileLifecycle.sweepOrphans().catch(() => undefined);
+      },
+      () => setStore({ activeDraftId: null, drafts: {} })
     );
   }, []);
 
@@ -73,20 +78,7 @@ export default function HomeScreen() {
 
   const onDeleteJob = async (id: string) => {
     try {
-      const committed = await mutateDraftStore((current) => {
-        if (!Object.prototype.hasOwnProperty.call(current.drafts, id)) {
-          return null;
-        }
-        const { [id]: _removed, ...rest } = current.drafts;
-        return {
-          store: {
-            activeDraftId:
-              current.activeDraftId === id ? null : current.activeDraftId,
-            drafts: rest,
-          },
-          value: undefined,
-        };
-      });
+      const committed = await captureFileLifecycle.deleteDraft(id);
       if (!committed) {
         handleMutationFailure();
         return;

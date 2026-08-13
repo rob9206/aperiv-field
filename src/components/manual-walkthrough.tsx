@@ -25,16 +25,17 @@ import {
 } from '@/lib/guide-steps';
 import { defaultRoomNames, type TranslationKey } from '@/lib/i18n';
 import {
+  completeDraft,
   loadDraftStore,
   mutateDraftById,
   mutateDraftStore,
 } from '@/lib/draft-store';
+import { captureFileLifecycle } from '@/lib/capture-files.native';
 import {
   createDraft,
   createRoom,
   draftCanBeVerified,
   legacyCompatibilitySqft,
-  persistPhoto,
   recordedSqftValue,
   roomHasVerifiedScan,
   scanMeasuredSqft,
@@ -42,6 +43,7 @@ import {
   type ManualWalkthroughDraft,
   type RoomCapture,
   type RoomCondition,
+  type RoomScanArtifact,
   type VerificationStatus,
 } from '@/lib/walkthrough-draft';
 import { useLocale } from '@/providers/locale-provider';
@@ -55,6 +57,7 @@ export type ScanTarget = {
 
 type ManualWalkthroughProps = {
   onOpenLidar?: (target: ScanTarget) => void;
+  onShareScan?: (artifact: RoomScanArtifact) => Promise<void>;
   lidarAvailable?: boolean;
   manualUnverified?: boolean;
   onStartAnother?: () => void;
@@ -136,6 +139,7 @@ function RoomSegments({
 
 export function ManualWalkthrough({
   onOpenLidar,
+  onShareScan,
   lidarAvailable = false,
   manualUnverified = false,
   onStartAnother,
@@ -150,6 +154,8 @@ export function ManualWalkthrough({
   const [hydrateError, setHydrateError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [shareError, setShareError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const [propertyName, setPropertyName] = useState('');
   const [unitNumber, setUnitNumber] = useState('');
@@ -241,6 +247,7 @@ export function ManualWalkthrough({
             : 'checkin';
         }
 
+        void captureFileLifecycle.sweepOrphans().catch(() => undefined);
         if (!mounted) {
           return;
         }
@@ -398,30 +405,43 @@ export function ManualWalkthrough({
       if (result.canceled) {
         return;
       }
-      const added = result.assets.map((asset) =>
-        persistPhoto(draftId, asset.uri)
-      );
-      await updateRoomById(draftId, roomId, (latest) => ({
-        ...latest,
-        photos: [...latest.photos, ...added],
-        skipped: false,
-      }));
+      const committed = await captureFileLifecycle.addPhotos({
+        draftId,
+        roomId,
+        sourceUris: result.assets.map((asset) => asset.uri),
+      });
+      if (!committed) {
+        throw new Error('Draft changed before photos could be saved.');
+      }
+      applyCommittedStore(committed.store);
     } catch {
       setPhotoError(t('photoFailed'));
     }
   };
 
-  const removePhoto = (photoId: string) => {
+  const removePhoto = async (photoId: string) => {
     if (!draft || !room) {
       return;
     }
-    void updateRoomById(draft.id, room.id, (latest) => ({
-      ...latest,
-      photos: latest.photos.filter((entry) => entry.id !== photoId),
-    }));
+    try {
+      const committed = await captureFileLifecycle.removePhoto({
+        draftId: draft.id,
+        roomId: room.id,
+        photoId,
+      });
+      if (!committed) {
+        throw new Error('Draft changed before the photo could be removed.');
+      }
+      applyCommittedStore(committed.store);
+    } catch {
+      setHydrateError(t('saveFailed'));
+    }
   };
 
   const goBackStep = () => {
+    if (isSaving) {
+      return;
+    }
     if (screenStep === 'done' && draft && !draft.completedAt) {
       setScreenStep('roomGuide');
       return;
@@ -594,30 +614,41 @@ export function ManualWalkthrough({
     });
   };
 
-  const saveJob = (status: VerificationStatus) => {
-    if (!draft) {
+  const shareScanFiles = async (artifact: RoomScanArtifact) => {
+    if (!onShareScan) {
       return;
     }
-    void persistDraftMutation(draft.id, (latest) => {
-      const verifiedOk =
-        status === 'verified' &&
-        draftCanBeVerified(latest) &&
-        lidarAvailable &&
-        !manualUnverified;
-      const totalMeasured = scanMeasuredSqft(latest.rooms);
-      return {
-        ...latest,
-        completedAt: new Date().toISOString(),
-        verificationStatus: verifiedOk ? 'verified' : 'unverified',
-        measuredSqftFromScan:
-          totalMeasured > 0 ? totalMeasured : undefined,
-      };
-    }).then((committed) => {
-      if (committed) {
-        setSavedMessage(t('savedOnDevice'));
-        setScreenStep('done');
+    setShareError(null);
+    try {
+      await onShareScan(artifact);
+    } catch {
+      setShareError(t('shareScanFailed'));
+    }
+  };
+
+  const saveJob = async (requestedStatus: VerificationStatus) => {
+    if (!draft || isSaving) {
+      return;
+    }
+    setIsSaving(true);
+    setHydrateError(null);
+    setSavedMessage(null);
+    try {
+      const committed = await completeDraft({
+        draftId: draft.id,
+        requestedStatus,
+      });
+      if (!committed) {
+        throw new Error('Draft changed before save.');
       }
-    });
+      applyCommittedStore(committed.store);
+      setSavedMessage(t('savedOnDevice'));
+      setScreenStep('done');
+    } catch {
+      setHydrateError(t('saveFailed'));
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const canSaveVerified =
@@ -660,8 +691,9 @@ export function ManualWalkthrough({
           {showGuideBack ? (
             <Pressable
               accessibilityRole="button"
+              disabled={isSaving}
               onPress={goBackStep}
-              style={styles.backHit}>
+              style={[styles.backHit, isSaving && styles.buttonDisabled]}>
               <ThemedText type="smallBold" style={{ color: theme.accentText }}>
                 ‹ {t('back')}
               </ThemedText>
@@ -781,21 +813,43 @@ export function ManualWalkthrough({
                       {Math.round(room.scanArtifact!.measuredSqft)}{' '}
                       {t('squareFeetShort')}
                     </ThemedText>
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={() =>
-                        onOpenLidar?.({ draftId: draft.id, roomId: room.id })
-                      }
-                      style={[
-                        styles.againChip,
-                        { borderColor: theme.accent },
-                      ]}>
-                      <ThemedText
-                        type="smallBold"
-                        style={{ color: theme.accentText }}>
-                        {t('scanAgain')}
-                      </ThemedText>
-                    </Pressable>
+                    <View style={styles.scanActionColumn}>
+                      {onShareScan ? (
+                        <Pressable
+                          accessibilityRole="button"
+                          onPress={() => {
+                            void shareScanFiles(room.scanArtifact!);
+                          }}
+                          style={[
+                            styles.againChip,
+                            { borderColor: theme.accent },
+                          ]}>
+                          <ThemedText
+                            type="smallBold"
+                            style={{ color: theme.accentText }}>
+                            {t('shareScanFiles')}
+                          </ThemedText>
+                        </Pressable>
+                      ) : null}
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() =>
+                          onOpenLidar?.({
+                            draftId: draft.id,
+                            roomId: room.id,
+                          })
+                        }
+                        style={[
+                          styles.againChip,
+                          { borderColor: theme.accent },
+                        ]}>
+                        <ThemedText
+                          type="smallBold"
+                          style={{ color: theme.accentText }}>
+                          {t('scanAgain')}
+                        </ThemedText>
+                      </Pressable>
+                    </View>
                   </View>
                 ) : (
                   <>
@@ -824,6 +878,11 @@ export function ManualWalkthrough({
                     </ThemedText>
                   </>
                 )}
+                {shareError ? (
+                  <ThemedText type="small" style={{ color: theme.danger }}>
+                    {shareError}
+                  </ThemedText>
+                ) : null}
               </View>
             ) : null}
 
@@ -964,7 +1023,9 @@ export function ManualWalkthrough({
                       accessibilityRole="button"
                       accessibilityLabel={t('removePhoto')}
                       hitSlop={8}
-                      onPress={() => removePhoto(photo.id)}
+                      onPress={() => {
+                        void removePhoto(photo.id);
+                      }}
                       style={[
                         styles.photoRemove,
                         { backgroundColor: theme.dangerFill },
@@ -1080,6 +1141,36 @@ export function ManualWalkthrough({
                 </ThemedText>
               ) : null}
             </View>
+            {onShareScan &&
+            draft.rooms.some((item) => item.scanArtifact != null) ? (
+              <View style={styles.section}>
+                {draft.rooms.map((item) =>
+                  item.scanArtifact ? (
+                    <Pressable
+                      key={item.id}
+                      accessibilityRole="button"
+                      onPress={() => {
+                        void shareScanFiles(item.scanArtifact!);
+                      }}
+                      style={[
+                        styles.shareScanButton,
+                        { borderColor: theme.border },
+                      ]}>
+                      <ThemedText
+                        type="smallBold"
+                        style={{ color: theme.accentText }}>
+                        {item.name || t('rooms')} · {t('shareScanFiles')}
+                      </ThemedText>
+                    </Pressable>
+                  ) : null
+                )}
+                {shareError ? (
+                  <ThemedText type="small" style={{ color: theme.danger }}>
+                    {shareError}
+                  </ThemedText>
+                ) : null}
+              </View>
+            ) : null}
             {savedMessage ? (
               <ThemedText type="default" themeColor="textSecondary">
                 {savedMessage}
@@ -1089,17 +1180,27 @@ export function ManualWalkthrough({
               <>
                 {canSaveVerified ? (
                   <GuideButton
-                    label={t('saveVerified')}
-                    onPress={() => saveJob('verified')}
+                    label={isSaving ? t('loading') : t('saveVerified')}
+                    onPress={() => {
+                      void saveJob('verified');
+                    }}
+                    disabled={isSaving}
                     accent={theme.accent}
                     onAccent={theme.onAccent}
                   />
                 ) : null}
                 <GuideButton
                   label={
-                    canSaveVerified ? t('saveJob') : t('saveUnverified')
+                    isSaving
+                      ? t('loading')
+                      : canSaveVerified
+                        ? t('saveJob')
+                        : t('saveUnverified')
                   }
-                  onPress={() => saveJob('unverified')}
+                  onPress={() => {
+                    void saveJob('unverified');
+                  }}
+                  disabled={isSaving}
                   accent={theme.accent}
                   onAccent={theme.onAccent}
                   secondary={canSaveVerified}
@@ -1214,6 +1315,11 @@ const styles = StyleSheet.create({
   scanDoneLabel: {
     fontWeight: '700',
     fontSize: 18,
+    flex: 1,
+  },
+  scanActionColumn: {
+    alignItems: 'stretch',
+    gap: Spacing.one,
   },
   againChip: {
     minHeight: 36,
@@ -1323,6 +1429,14 @@ const styles = StyleSheet.create({
     minHeight: MinTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  shareScanButton: {
+    minHeight: MinTouchTarget,
+    borderRadius: Spacing.two,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.three,
   },
   statusBanner: {
     borderRadius: Spacing.three,

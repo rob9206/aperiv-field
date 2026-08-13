@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { parseDraftStoreRaw } from './draft-store-parse.ts';
 import {
+  draftCanBeVerified,
   normalizeDraftStore,
   roomHasVerifiedScan,
   scanMeasuredSqft,
@@ -11,6 +12,7 @@ import type {
   DraftStore,
   ManualWalkthroughDraft,
   RoomCondition,
+  VerificationStatus,
   WalkthroughFinding,
 } from './walkthrough-draft';
 
@@ -63,6 +65,15 @@ export type CommitRoomScanResult = {
   replaced?: RoomScanArtifact;
 };
 
+export type CompleteDraftInput = {
+  draftId: string;
+  requestedStatus: VerificationStatus;
+};
+
+export type CompleteDraftResult = {
+  store: DraftStore;
+};
+
 export type DraftStoreRepository = {
   loadDraftStore(): Promise<DraftStore>;
   mutateDraftStore<T>(
@@ -73,6 +84,7 @@ export type DraftStoreRepository = {
     mutation: DraftMutation<T>
   ): Promise<{ store: DraftStore; value: T } | null>;
   commitRoomScan(input: CommitRoomScanInput): Promise<CommitRoomScanResult | null>;
+  completeDraft(input: CompleteDraftInput): Promise<CompleteDraftResult | null>;
 };
 
 function newLegacyDraftId(): string {
@@ -295,11 +307,35 @@ export function createDraftStoreRepository(
     };
   }
 
+  async function completeDraft(
+    input: CompleteDraftInput
+  ): Promise<CompleteDraftResult | null> {
+    const committed = await mutateDraftById(input.draftId, (draft) => {
+      const measuredSqft = scanMeasuredSqft(draft.rooms);
+      return {
+        draft: {
+          ...draft,
+          completedAt: new Date().toISOString(),
+          verificationStatus:
+            input.requestedStatus === 'verified' &&
+            draftCanBeVerified(draft)
+              ? 'verified'
+              : 'unverified',
+          measuredSqftFromScan:
+            measuredSqft > 0 ? measuredSqft : undefined,
+        },
+        value: undefined,
+      };
+    });
+    return committed === null ? null : { store: committed.store };
+  }
+
   return {
     loadDraftStore,
     mutateDraftStore,
     mutateDraftById,
     commitRoomScan,
+    completeDraft,
   };
 }
 
@@ -310,3 +346,4 @@ export const loadDraftStore = draftStoreRepository.loadDraftStore;
 export const mutateDraftStore = draftStoreRepository.mutateDraftStore;
 export const mutateDraftById = draftStoreRepository.mutateDraftById;
 export const commitRoomScan = draftStoreRepository.commitRoomScan;
+export const completeDraft = draftStoreRepository.completeDraft;

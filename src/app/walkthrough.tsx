@@ -11,7 +11,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { commitRoomScan } from '@/lib/draft-store';
+import { captureFileLifecycle } from '@/lib/capture-files.native';
 import { readVerifiedMeasurementFromExport } from '@/lib/read-roomplan-measure';
 import type { TranslationKey } from '@/lib/i18n';
 import type { RoomScanArtifact } from '@/lib/walkthrough-draft';
@@ -25,6 +25,7 @@ import {
   exportResults,
   finishSession,
   isSupported,
+  share,
   startSession,
 } from '../../modules/expo-room-scan';
 
@@ -125,16 +126,21 @@ export default function WalkthroughScreen() {
     exportInFlight.current = true;
     setScanState({ phase: 'processing' });
 
+    let exportedPaths: { jsonPath: string; usdzPath: string } | null = null;
     try {
       const results = await exportResults(scan.scanId);
+      exportedPaths = results;
       if (activeScan.current !== scan) {
+        await captureFileLifecycle.cleanupExportedScanPaths(results);
         return;
       }
       const measurement = await readVerifiedMeasurementFromExport(results);
       if (activeScan.current !== scan) {
+        await captureFileLifecycle.cleanupExportedScanPaths(results);
         return;
       }
       if (measurement === null) {
+        await captureFileLifecycle.cleanupExportedScanPaths(results);
         showScanError('scanMeasureFailed', scan.target);
         return;
       }
@@ -146,7 +152,7 @@ export default function WalkthroughScreen() {
         source: measurement.source,
         capturedAt: new Date().toISOString(),
       };
-      const committed = await commitRoomScan({
+      const committed = await captureFileLifecycle.commitRoomScan({
         draftId: scan.target.draftId,
         roomId: scan.target.roomId,
         artifact,
@@ -160,6 +166,9 @@ export default function WalkthroughScreen() {
       }
       enterManual(true);
     } catch {
+      if (exportedPaths) {
+        await captureFileLifecycle.cleanupExportedScanPaths(exportedPaths);
+      }
       if (activeScan.current === scan) {
         showScanError('scanInterrupted', scan.target);
       }
@@ -366,6 +375,9 @@ export default function WalkthroughScreen() {
               lidarAvailable={scanState.lidarAvailable}
               manualUnverified={scanState.manualUnverified}
               onStartAnother={resetManualUnverified}
+              onShareScan={(artifact) =>
+                share([artifact.jsonPath, artifact.usdzPath])
+              }
               onOpenLidar={
                 scanState.lidarAvailable
                   ? prepareScan
