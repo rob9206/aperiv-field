@@ -8,6 +8,7 @@ import {
 import {
   draftCanBeVerified,
   legacyCompatibilitySqft,
+  roomHasVerifiedScan,
   scanMeasuredSqft,
   type RoomScanArtifact,
 } from './walkthrough-schema.ts';
@@ -199,6 +200,20 @@ describe('scan verification', () => {
 
     assert.equal(scanMeasuredSqft(draft.rooms), 0);
     assert.equal(legacyCompatibilitySqft(draft), 125);
+  });
+
+  it('keeps an export-only scan on the room without verifying the job', () => {
+    const draft = createDraft('Oak', '1A', '', ['Living']);
+    draft.rooms[0].scanArtifact = {
+      scanId: 'scan-1',
+      jsonPath: '/scan/Room.json',
+      usdzPath: '/scan/Room.usdz',
+      source: 'export-only',
+      capturedAt: '2026-08-12T00:00:00.000Z',
+    };
+    assert.equal(roomHasVerifiedScan(draft.rooms[0]), false);
+    assert.equal(draftCanBeVerified(draft), false);
+    assert.equal(scanMeasuredSqft(draft.rooms), 0);
   });
 
   it('rejects wall estimates for verification', () => {
