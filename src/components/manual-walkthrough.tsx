@@ -41,6 +41,7 @@ import {
   draftCanBeVerified,
   legacyCompatibilitySqft,
   recordedSqftValue,
+  roomHasSavedScan,
   roomHasVerifiedScan,
   scanMeasuredSqft,
   type DraftStore,
@@ -182,6 +183,7 @@ export function ManualWalkthrough({
     shareFailure?.context === shareContext ? shareFailure.message : null;
   const nextRoom = draft?.rooms[roomIndex + 1] ?? null;
   const roomVerified = room ? roomHasVerifiedScan(room) : false;
+  const roomScanSaved = room ? roomHasSavedScan(room) : false;
   const previousRoomMeasurement =
     !roomVerified &&
     typeof room?.measuredSqftFromScan === 'number' &&
@@ -815,16 +817,16 @@ export function ManualWalkthrough({
 
             {lidarAvailable ? (
               <View style={styles.section}>
-                {roomVerified ? (
+                {roomScanSaved ? (
                   <View
                     style={[
                       styles.scanDoneRow,
                       { backgroundColor: theme.backgroundSelected },
                     ]}>
                     <ThemedText type="default" style={styles.scanDoneLabel}>
-                      ✓{' '}
-                      {Math.round(room.scanArtifact!.measuredSqft)}{' '}
-                      {t('squareFeetShort')}
+                      {roomVerified
+                        ? `✓ ${Math.round(room.scanArtifact!.measuredSqft!)} ${t('squareFeetShort')}`
+                        : t('scanSavedUnverified')}
                     </ThemedText>
                     <View style={styles.scanActionColumn}>
                       {onShareScan ? (

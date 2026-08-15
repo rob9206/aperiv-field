@@ -4,6 +4,7 @@ import { parseDraftStoreRaw } from './draft-store-parse.ts';
 import {
   draftCanBeVerified,
   normalizeDraftStore,
+  isPersistableScanArtifact,
   roomHasVerifiedScan,
   scanMeasuredSqft,
 } from './walkthrough-schema.ts';
@@ -338,10 +339,7 @@ export function createDraftStoreRepository(
       if (
         roomIndex < 0 ||
         artifactAlreadyUsed ||
-        !roomHasVerifiedScan({
-          scanArtifact: input.artifact,
-          skipped: false,
-        })
+        !isPersistableScanArtifact(input.artifact)
       ) {
         return null;
       }
@@ -359,7 +357,12 @@ export function createDraftStoreRepository(
               skipped: false,
               scanned: true,
               scanArtifact: input.artifact,
-              measuredSqftFromScan: input.artifact.measuredSqft,
+              ...(roomHasVerifiedScan({
+                scanArtifact: input.artifact,
+                skipped: false,
+              })
+                ? { measuredSqftFromScan: input.artifact.measuredSqft }
+                : { measuredSqftFromScan: undefined }),
             }
           : room
       );

@@ -57,6 +57,7 @@ const en = {
   scanInterrupted: 'Scan interrupted',
   scanMeasureFailed:
     'Square footage could not be verified from this scan. Try LiDAR again or continue unverified.',
+  scanSavedUnverified: 'Scan saved. Square feet could not be verified.',
   scanDraftMissing:
     'Could not save the scan to this job. Go back and reopen the job.',
   scanRetry: 'Try LiDAR again',
@@ -185,6 +186,8 @@ const es: { [K in keyof typeof en]: string } = {
   scanInterrupted: 'Escaneo interrumpido',
   scanMeasureFailed:
     'No se pudieron verificar los pies² con este escaneo. Intenta usar LiDAR de nuevo o continúa sin verificar.',
+  scanSavedUnverified:
+    'Escaneo guardado. No se pudieron verificar los pies².',
   scanDraftMissing:
     'No se pudo guardar el escaneo en este trabajo. Vuelve a abrir el trabajo.',
   scanRetry: 'Intentar LiDAR de nuevo',
