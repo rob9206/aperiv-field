@@ -25,6 +25,10 @@ export type RoomScanErrorEvent = {
 export type RoomScanExportResult = {
   usdzPath: string;
   jsonPath: string;
+  /** Floor area in square meters when native export computed it. */
+  areaSquareMeters?: string;
+  /** Floor area in square feet when native export computed it. */
+  areaSquareFeet?: string;
 };
 
 export type RoomScanSubscription = {
