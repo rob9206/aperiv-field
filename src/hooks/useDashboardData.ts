@@ -76,7 +76,6 @@ export function useDashboardData(propertyId: string) {
       }
     }
 
-    setData((prev) => ({ ...prev, loading: true, error: null }));
     void fetchData();
 
     return () => {
