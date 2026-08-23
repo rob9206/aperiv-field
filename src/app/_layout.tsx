@@ -51,6 +51,7 @@ function RootNavigator() {
       <Stack.Screen name="login" options={{ title: t('signIn') }} />
       <Stack.Protected guard={!!session}>
         <Stack.Screen name="walkthrough" options={{ title: t('appName') }} />
+        <Stack.Screen name="dashboard" options={{ title: t('dashboardTitle') }} />
       </Stack.Protected>
     </Stack>
   );
