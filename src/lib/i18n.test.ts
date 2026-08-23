@@ -14,6 +14,7 @@ describe('t', () => {
   it('returns English by default keys', () => {
     assert.equal(t('en', 'myJobs'), 'My jobs');
     assert.equal(t('en', 'takePhoto'), 'Take photo');
+    assert.equal(t('en', 'dashboardTitle'), 'Property dashboard');
   });
 
   it('returns Spanish strings for es', () => {

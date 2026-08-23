@@ -152,6 +152,15 @@ export default function HomeScreen() {
                   {t('loading')}
                 </ThemedText>
               )}
+              <Link href="/dashboard" asChild>
+                <Pressable
+                  accessibilityRole="button"
+                  style={styles.dashboardLink}>
+                  <ThemedText type="smallBold" themeColor="accentText">
+                    {t('dashboardOpen')}
+                  </ThemedText>
+                </Pressable>
+              </Link>
               <Pressable
                 accessibilityRole="button"
                 onPress={() => {
@@ -246,6 +255,12 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 17,
+  },
+  dashboardLink: {
+    minHeight: MinTouchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: Spacing.two,
   },
   signOut: {
     minHeight: MinTouchTarget,
