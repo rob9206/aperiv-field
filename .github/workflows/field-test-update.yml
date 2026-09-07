@@ -58,4 +58,4 @@ jobs:
           console.log(JSON.stringify({ build: '14', installed, candidate, compatible: true }));
           NODE
       - name: Publish to the existing test channel
-        run: eas update --channel field-submission-test --environment preview --platform ios --message "Clear teal Send action, compact destination picker, and sent confirmation" --non-interactive
+        run: eas update --channel field-submission-test --environment preview --platform ios --message "Simpler jobs, room capture, and send screens" --non-interactive

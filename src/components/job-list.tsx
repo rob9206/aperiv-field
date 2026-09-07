@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -22,7 +21,7 @@ type JobListProps = {
 function statusMeta(
   draft: ManualWalkthroughDraft,
   t: (key: 'jobInProgress' | 'jobVerified' | 'jobUnverified') => string,
-  theme: ReturnType<typeof useTheme>
+  theme: ReturnType<typeof useTheme>,
 ): { label: string; background: string; color: string } {
   if (draft.completedAt) {
     if (draft.verificationStatus === 'verified') {
@@ -53,12 +52,8 @@ export function JobList({
 }: JobListProps) {
   const theme = useTheme();
   const { t } = useLocale();
-  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(
-    null
-  );
-
   const jobs = Object.values(store.drafts).sort((a, b) =>
-    b.createdAt.localeCompare(a.createdAt)
+    b.createdAt.localeCompare(a.createdAt),
   );
 
   return (
@@ -70,8 +65,12 @@ export function JobList({
           styles.primaryButton,
           { backgroundColor: theme.accent },
           pressed && styles.pressed,
-        ]}>
-        <ThemedText type="default" style={styles.primaryLabel}>
+        ]}
+      >
+        <ThemedText
+          type="default"
+          style={[styles.primaryLabel, { color: theme.onAccent }]}
+        >
           {t('newJob')}
         </ThemedText>
       </Pressable>
@@ -79,8 +78,13 @@ export function JobList({
       {jobs.length === 0 ? (
         <ThemedView
           type="backgroundElement"
-          style={[styles.empty, { borderColor: theme.border }]}>
-          <ThemedText type="default" themeColor="textSecondary" style={styles.emptyText}>
+          style={[styles.empty, { borderColor: theme.border }]}
+        >
+          <ThemedText
+            type="default"
+            themeColor="textSecondary"
+            style={styles.emptyText}
+          >
             {t('noJobsYet')}
           </ThemedText>
         </ThemedView>
@@ -88,34 +92,42 @@ export function JobList({
         jobs.map((job) => {
           const status = statusMeta(job, t, theme);
           return (
-            <Pressable
+            <View
               key={job.id}
-              accessibilityRole="button"
-              onPress={() => onOpenJob(job.id)}
-              style={({ pressed }) => [
+              style={[
                 styles.row,
                 {
                   backgroundColor: theme.backgroundElement,
                   borderColor: theme.border,
                 },
-                pressed && styles.pressed,
-              ]}>
-              <View style={styles.rowCopy}>
+              ]}
+            >
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${job.property}, ${job.unit}, ${status.label}`}
+                onPress={() => onOpenJob(job.id)}
+                style={({ pressed }) => [
+                  styles.rowCopy,
+                  pressed && styles.pressed,
+                ]}
+              >
                 <ThemedText type="heading" style={styles.rowTitle}>
-                  {job.property}
+                  {job.unit}
                 </ThemedText>
-                <ThemedText type="default" themeColor="textSecondary">
-                  {t('unit')} {job.unit}
+                <ThemedText themeColor="textSecondary">
+                  {job.property}
                 </ThemedText>
                 <View style={styles.metaRow}>
                   <View
                     style={[
                       styles.statusPill,
                       { backgroundColor: status.background },
-                    ]}>
+                    ]}
+                  >
                     <ThemedText
                       type="smallBold"
-                      style={{ color: status.color }}>
+                      style={{ color: status.color }}
+                    >
                       {status.label}
                     </ThemedText>
                   </View>
@@ -123,34 +135,36 @@ export function JobList({
                     {totalPhotos(job.rooms)} {t('photosCount')}
                   </ThemedText>
                 </View>
-              </View>
-              <View style={styles.rowActions}>
-                <Pressable
-                  accessibilityRole="button"
-                  hitSlop={12}
-                  style={styles.deleteHit}
-                  onPress={() => {
-                    if (confirmingDeleteId !== job.id) {
-                      setConfirmingDeleteId(job.id);
-                      return;
-                    }
-                    setConfirmingDeleteId(null);
-                    onDeleteJob(job.id);
-                  }}>
-                  <ThemedText type="smallBold" style={{ color: theme.danger }}>
-                    {confirmingDeleteId === job.id
-                      ? t('confirmDelete')
-                      : t('deleteJob')}
+                {job.completedAt ? (
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {t('savedOnDevice')}
                   </ThemedText>
-                </Pressable>
-                <ThemedText
-                  type="heading"
-                  themeColor="textSecondary"
-                  style={styles.chevron}>
-                  ›
+                ) : null}
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${t('deleteJob')}: ${job.property}, ${job.unit}`}
+                style={styles.deleteHit}
+                onPress={() =>
+                  Alert.alert(
+                    t('confirmDelete'),
+                    `${job.property} · ${job.unit}`,
+                    [
+                      { text: t('cancel'), style: 'cancel' },
+                      {
+                        text: t('deleteJob'),
+                        style: 'destructive',
+                        onPress: () => onDeleteJob(job.id),
+                      },
+                    ],
+                  )
+                }
+              >
+                <ThemedText type="small" themeColor="textSecondary">
+                  {t('deleteJob')}
                 </ThemedText>
-              </View>
-            </Pressable>
+              </Pressable>
+            </View>
           );
         })
       )}
@@ -170,7 +184,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
   },
   primaryLabel: {
-    color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 17,
   },
@@ -199,8 +212,8 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
   },
   rowTitle: {
-    fontSize: 20,
-    lineHeight: 26,
+    fontSize: 18,
+    lineHeight: 24,
   },
   metaRow: {
     flexDirection: 'row',

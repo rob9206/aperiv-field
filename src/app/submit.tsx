@@ -12,7 +12,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { LanguageToggle } from '@/components/language-toggle';
 import { useTheme } from '@/hooks/use-theme';
 import { loadDraftStore } from '@/lib/draft-store';
 import { FieldSubmissionError } from '@/lib/field-upload';
@@ -163,9 +162,6 @@ function SubmissionForm({ draftId }: { draftId: string }) {
     <ThemedView style={{ flex: 1 }}>
       <SafeAreaView style={{ flex: 1 }} edges={['left', 'right', 'bottom']}>
         <ScrollView ref={scroll} contentContainerStyle={styles.content}>
-          <View style={styles.languageRow}>
-            <LanguageToggle />
-          </View>
           {sent ? (
             <View
               style={[
@@ -211,24 +207,11 @@ function SubmissionForm({ draftId }: { draftId: string }) {
                   {t('sendKeepsCopy')}
                 </ThemedText>
               </View>
-              {draft && (
-                <View
-                  style={[
-                    styles.card,
-                    {
-                      backgroundColor: theme.backgroundElement,
-                      borderColor: theme.border,
-                    },
-                  ]}
-                >
-                  <ThemedText type="small" themeColor="textSecondary">
-                    {t('savedJob')}
-                  </ThemedText>
-                  <ThemedText type="heading">
-                    {draft.property} · {t('unit')} {draft.unit}
-                  </ThemedText>
-                </View>
-              )}
+              {draft ? (
+                <ThemedText type="small" themeColor="textSecondary">
+                  {t('savedJob')}: {draft.property} · {draft.unit}
+                </ThemedText>
+              ) : null}
               {failed && (
                 <ThemedText
                   accessibilityLiveRegion="polite"
