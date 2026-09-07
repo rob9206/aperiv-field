@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import type { Json } from './database.types';
 import type { ManualWalkthroughDraft } from './walkthrough-draft';
+import { FieldSubmissionError, uploadFieldAsset } from './field-upload';
 import {
   submitFieldDraft,
   type SubmissionPayload,
@@ -65,27 +66,16 @@ export async function sendFieldDraft(
     async upload(asset) {
       // Native file reads only. Import lazily so the web fallback stays usable.
       const { File, Paths, Directory } = await import('expo-file-system');
-      const file = new File(asset.uri);
       const root = new Directory(
         Paths.document,
         asset.bucket === 'walkthrough-scans' ? 'scans' : 'walkthrough-photos'
       ).uri;
-      if (
-        !file.uri.startsWith(`${root.replace(/\/$/, '')}/`) ||
-        /(?:^|\/)\.\.(?:\/|$)/.test(asset.uri) ||
-        !file.exists
-      )
-        throw new Error('Capture file is missing');
-      if (file.size <= 0 || file.size > 50 * 1024 * 1024)
-        throw new Error('Capture file exceeds upload limit');
-      const body = await file.arrayBuffer();
-      const { error: uploadError } = await client.storage
-        .from(asset.bucket)
-        .upload(asset.path, body, {
-          contentType: asset.contentType,
-          upsert: true,
-        });
-      if (uploadError) throw uploadError;
+      await uploadFieldAsset(asset, root, uri => new File(uri), async body => {
+        const { error: uploadError } = await client.storage
+          .from(asset.bucket)
+          .upload(asset.path, body, { contentType: asset.contentType, upsert: true });
+        if (uploadError) throw uploadError;
+      });
     },
     async complete(id, payload) {
       const { data: row, error: updateError } = await client
@@ -97,7 +87,7 @@ export async function sendFieldDraft(
         .select('id')
         .single();
       if (updateError || !row)
-        throw updateError ?? new Error('Submission was not saved');
+        throw new FieldSubmissionError('finalize_failed');
     },
   };
   const work = submitFieldDraft(draft, unitId, userId, ports);

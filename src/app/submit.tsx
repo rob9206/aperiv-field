@@ -8,6 +8,7 @@ import { ThemedView } from '@/components/themed-view';
 import { LanguageToggle } from '@/components/language-toggle';
 import { useTheme } from '@/hooks/use-theme';
 import { loadDraftStore } from '@/lib/draft-store';
+import { FieldSubmissionError } from '@/lib/field-upload';
 import {
   fieldSubmissionEnabled,
   loadFieldRoster,
@@ -73,10 +74,12 @@ function SubmissionForm({ draftId }: { draftId: string }) {
   const [propertyId, setPropertyId] = useState('');
   const [unitId, setUnitId] = useState('');
   const [failed, setFailed] = useState(false);
+  const [sendError, setSendError] = useState<FieldSubmissionError | null>(null);
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const lock = useRef(false);
+  const scroll = useRef<ScrollView>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -102,24 +105,27 @@ function SubmissionForm({ draftId }: { draftId: string }) {
     lock.current = true;
     setBusy(true);
     setFailed(false);
+    setSendError(null);
     try {
       // Reload the saved revision. Never send an out-of-date screen snapshot.
       const latest = (await loadDraftStore()).drafts[draft.id];
       if (!latest?.completedAt || latest.completedAt !== draft.completedAt)
-        throw new Error('Job changed');
+        throw new FieldSubmissionError('job_changed');
       await sendFieldDraft(latest, unitId);
       setSent(true);
-    } catch {
+    } catch (error) {
       setFailed(true);
+      setSendError(error instanceof FieldSubmissionError ? error : null);
     } finally {
       lock.current = false;
       setBusy(false);
+      scroll.current?.scrollTo({ y: 0, animated: true });
     }
   };
   return (
     <ThemedView style={{ flex: 1 }}>
       <SafeAreaView style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.content}>
+        <ScrollView ref={scroll} contentContainerStyle={styles.content}>
           <LanguageToggle />
           <ThemedText type="title">{t('sendToManager')}</ThemedText>
           {draft && (
@@ -141,8 +147,22 @@ function SubmissionForm({ draftId }: { draftId: string }) {
                   accessibilityLiveRegion="polite"
                   style={{ color: theme.danger }}
                 >
-                  {t('sendFailed')}
+                  {!roster ? t('loadSendFailed') : sendError ? t({
+                    missing_scan: 'sendMissingScan',
+                    missing_photo: 'sendMissingPhoto',
+                    file_too_large: 'sendFileTooLarge',
+                    upload_failed: 'sendUploadFailed',
+                    finalize_failed: 'sendFinalizeFailed',
+                    job_changed: 'sendJobChanged',
+                  }[sendError.code] as Parameters<typeof t>[0]) : t('sendFailed')}
+                  {sendError?.roomName ? ` (${sendError.roomName})` : ''}
                 </ThemedText>
+              )}
+              {failed && draft && (
+                <SubmitButton
+                  label={t('openSavedJob')}
+                  onPress={() => router.replace({ pathname: '/walkthrough', params: { mode: 'resume', id: draft.id } })}
+                />
               )}
               {!roster ? (
                 failed ? (
@@ -191,7 +211,7 @@ function SubmissionForm({ draftId }: { draftId: string }) {
                         (unit) => unit.property_id === propertyId
                       ))) && <ThemedText>{t('noRemoteUnits')}</ThemedText>}
                   <SubmitButton
-                    label={busy ? t('sending') : t('sendToManager')}
+                    label={busy ? t('sending') : failed ? t('retrySend') : t('sendToManager')}
                     onPress={() => void send()}
                     selected
                     disabled={busy || !unitId}

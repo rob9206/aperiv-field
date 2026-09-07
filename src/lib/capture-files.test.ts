@@ -88,6 +88,31 @@ function store(...drafts: ManualWalkthroughDraft[]): DraftStore {
   };
 }
 
+describe('saved files after an iOS app update', () => {
+  it('keeps referenced scans and photos when the container UUID changes', () => {
+    const oldDocuments = '/var/mobile/Containers/Data/Application/11111111-1111-1111-1111-111111111111/Documents';
+    const currentDocuments = 'file:///var/mobile/Containers/Data/Application/22222222-2222-2222-2222-222222222222/Documents';
+    const saved = draft();
+    saved.rooms[0].scanArtifact = artifact('saved-scan', {
+      jsonPath: `${oldDocuments}/scans/saved-scan/Room.json`,
+      usdzPath: `${oldDocuments}/scans/saved-scan/Room.usdz`,
+    });
+    saved.rooms[0].photos = [photo('saved-photo', `file://${oldDocuments}/walkthrough-photos/draft-a/saved-photo.jpg`)];
+    const roots = { scans: `${currentDocuments}/scans`, photos: `${currentDocuments}/walkthrough-photos` };
+    const actual: CaptureFileEntry[] = [
+      { kind: 'directory', uri: `${roots.scans}/saved-scan` },
+      { kind: 'file', uri: `${roots.scans}/saved-scan/Room.json` },
+      { kind: 'file', uri: `${roots.scans}/saved-scan/Room.usdz` },
+      { kind: 'directory', uri: `${roots.photos}/draft-a` },
+      { kind: 'file', uri: `${roots.photos}/draft-a/saved-photo.jpg` },
+    ];
+    assert.deepEqual(planOrphanSweep(store(saved), roots, actual), {
+      deleteFiles: [], deleteDirectories: [],
+    });
+    assert.deepEqual(planUnreferencedCapturePaths(actual.filter(x => x.kind === 'file').map(x => x.uri), store(saved), roots), []);
+  });
+});
+
 function memoryStorage(
   initial: DraftStore,
   hooks: { beforeSet?: () => void } = {}

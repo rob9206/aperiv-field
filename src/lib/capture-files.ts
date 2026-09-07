@@ -8,6 +8,7 @@ import type {
   ManualWalkthroughDraft,
   RoomPhoto,
 } from './walkthrough-draft.ts';
+import { resolveCaptureFileUri } from './capture-paths.ts';
 import type { RoomScanArtifact } from './walkthrough-schema.ts';
 
 export type CaptureRoots = {
@@ -66,6 +67,7 @@ function canonicalLocalPath(uriOrPath: string): string | null {
   if (!path.startsWith('/') || path.includes('\0')) {
     return null;
   }
+  if (path.startsWith('/private/var/')) path = path.slice(8);
 
   const segments: string[] = [];
   for (const segment of path.split('/')) {
@@ -91,13 +93,18 @@ function isOwnedDescendant(path: string, roots: readonly string[]): boolean {
   return roots.some((root) => path.startsWith(`${root}/`));
 }
 
-function referencedCanonicalPaths(store: DraftStore): Set<string> {
+function referencedCanonicalPaths(store: DraftStore, roots: CaptureRoots): Set<string> {
   const paths = new Set<string>();
   for (const current of Object.values(store.drafts)) {
     for (const path of capturePathsForDraft(current)) {
       const canonical = canonicalLocalPath(path);
       if (canonical !== null) {
         paths.add(canonical);
+      }
+      for (const root of [roots.scans, roots.photos]) {
+        const resolved = resolveCaptureFileUri(path, root);
+        const relocated = resolved && canonicalLocalPath(resolved);
+        if (relocated) paths.add(relocated);
       }
     }
   }
@@ -136,7 +143,7 @@ export function planUnreferencedCapturePaths(
   roots: CaptureRoots
 ): string[] {
   const ownedRoots = canonicalRoots(roots);
-  const referenced = referencedCanonicalPaths(committedStore);
+  const referenced = referencedCanonicalPaths(committedStore, roots);
   return candidates.filter((candidate) => {
     const canonical = canonicalLocalPath(candidate);
     return (
@@ -153,7 +160,7 @@ export function planOrphanSweep(
   actualEntries: readonly CaptureFileEntry[]
 ): CaptureCleanupPlan {
   const ownedRoots = canonicalRoots(roots);
-  const referenced = referencedCanonicalPaths(committedStore);
+  const referenced = referencedCanonicalPaths(committedStore, roots);
   const deleteFiles: string[] = [];
   const deleteDirectories: string[] = [];
 

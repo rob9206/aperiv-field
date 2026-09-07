@@ -60,3 +60,11 @@ npx expo export --platform ios --output-dir /tmp/aperiv-field-ios
 ```
 
 Automated checks cover retries, lost acknowledgements, revision identity, local retention, export-only compatibility, measurement rules, and the real roster adapter. An iOS bundle export checks JavaScript compilation; it does not replace the physical-device acceptance above. No production migration or OTA was applied while preparing this branch.
+
+## Build 14 upload retry fix
+
+The first phone attempt created one pending Field row, but no assets arrived. Investigation reproduced an iOS app-update defect: stored absolute file locations can refer to a previous app container, causing uploads to reject preserved files and orphan cleanup to misclassify referenced files. This fix resolves capture paths inside the current Documents capture folders, normalizes the iOS private/var alias, and protects relocated references in cleanup. A regression test failed before the fix and passes afterward.
+
+The send screen now scrolls to its result and distinguishes missing scan/photo files, oversized files, upload errors, and finalization errors in English and Spanish. It retains the selected target for retry and provides a link back to the saved job. Missing attachments are never silently dropped or marked complete. If an attachment is already absent, the affected room must be recaptured.
+
+The dedicated test update workflow compares its native fingerprint with build 14 before publishing to `field-submission-test`. It does not publish to the production or preview channels. Phone retry acceptance remains required.
