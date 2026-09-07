@@ -1,4 +1,6 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
+import { Redirect } from 'expo-router';
+import { useAuth } from '@/providers/auth-provider';
 import { Alert, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -11,16 +13,15 @@ import { useDashboardData } from '@/hooks/useDashboardData';
 import { useTheme } from '@/hooks/use-theme';
 import {
   buildUnitsExportCsv,
-  DEFAULT_DASHBOARD_PROPERTY_ID,
 } from '@/lib/dashboard-data';
 import { useLocale } from '@/providers/locale-provider';
 
 export default function DashboardPage() {
   const theme = useTheme();
   const { t } = useLocale();
-  const { metrics, columns, loading, error } = useDashboardData(
-    DEFAULT_DASHBOARD_PROPERTY_ID
-  );
+  const [propertyId, setPropertyId] = useState('');
+  const { user, isLoading } = useAuth();
+  const { metrics, columns, properties, loading, error } = useDashboardData(propertyId);
 
   const onExport = useCallback(() => {
     const units = [
@@ -35,7 +36,9 @@ export default function DashboardPage() {
     });
   }, [columns, t]);
 
-  if (loading) {
+  if (!isLoading && !user) return <Redirect href="/login" />;
+
+  if (loading || isLoading) {
     return (
       <ThemedView style={styles.centered}>
         <ThemedText themeColor="textSecondary">{t('dashboardLoading')}</ThemedText>
@@ -59,7 +62,7 @@ export default function DashboardPage() {
           showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
             <ThemedText type="heading" style={styles.title}>
-              Sunset Apartments
+              {properties.find(property => property.id === propertyId)?.name ?? t('dashboardOpen')}
             </ThemedText>
             <Pressable
               accessibilityRole="button"
@@ -75,6 +78,11 @@ export default function DashboardPage() {
             </Pressable>
           </View>
 
+          <View style={{gap: 8}}>
+            {properties.map(property => <Pressable key={property.id} accessibilityRole="button" accessibilityState={{selected: property.id === propertyId}} onPress={() => setPropertyId(property.id)} style={{minHeight: 52, padding: 12, backgroundColor: property.id === propertyId ? theme.backgroundSelected : theme.backgroundElement}}>
+              <ThemedText>{property.name}</ThemedText>
+            </Pressable>)}
+          </View>
           <MetricsRow
             metrics={metrics}
             labels={{

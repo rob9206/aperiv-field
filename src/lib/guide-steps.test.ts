@@ -51,6 +51,25 @@ describe('canAdvanceRoom', () => {
     );
   });
 
+  it('lets the crew continue after a saved scan that has no verified sq ft', () => {
+    assert.equal(
+      canAdvanceRoom(
+        {
+          photos: [{ id: '1', uri: 'x' }],
+          scanArtifact: {
+            scanId: 'scan-1',
+            jsonPath: '/scan/Room.json',
+            usdzPath: '/scan/Room.usdz',
+            source: 'export-only',
+            capturedAt: '2026-08-12T00:00:00.000Z',
+          },
+        },
+        true
+      ),
+      'ok'
+    );
+  });
+
   it('allows LiDAR after a verified measurement and photo', () => {
     assert.equal(
       canAdvanceRoom(

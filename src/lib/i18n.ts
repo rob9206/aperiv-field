@@ -1,6 +1,17 @@
 export type AppLocale = 'en' | 'es';
 
 const en = {
+  sendToManager: 'Send to manager',
+  sendKeepsCopy: 'Choose the property and unit for this saved job. Your copy stays on this phone.',
+  sentToManager: 'Sent to manager. Your saved job is still on this phone.',
+  sendFailed: 'Could not send this job. Your saved copy is safe. Check the unit and connection, then retry.',
+  sending: 'Sending… Keep this screen open.',
+  chooseProperty: 'Choose property',
+  chooseUnit: 'Choose unit',
+  retryLoad: 'Reload',
+  noRemoteUnits: 'No units are available for this account.',
+
+
   appName: 'Aperiv Field',
   tagline: 'On-site unit jobs and photos.',
   signIn: 'Sign in',
@@ -57,6 +68,7 @@ const en = {
   scanInterrupted: 'Scan interrupted',
   scanMeasureFailed:
     'Square footage could not be verified from this scan. Try LiDAR again or continue unverified.',
+  scanSavedUnverified: 'Scan saved. Square feet could not be verified.',
   scanDraftMissing:
     'Could not save the scan to this job. Go back and reopen the job.',
   scanRetry: 'Try LiDAR again',
@@ -145,6 +157,16 @@ const en = {
 } as const;
 
 const es: { [K in keyof typeof en]: string } = {
+  sendToManager: 'Enviar al administrador',
+  sendKeepsCopy: 'Elige la propiedad y unidad de este trabajo guardado. Tu copia permanece en este teléfono.',
+  sentToManager: 'Enviado al administrador. Tu trabajo sigue guardado en este teléfono.',
+  sendFailed: 'No se pudo enviar. Tu copia está guardada. Revisa la unidad y conexión, e inténtalo de nuevo.',
+  sending: 'Enviando… Mantén esta pantalla abierta.',
+  chooseProperty: 'Elegir propiedad',
+  chooseUnit: 'Elegir unidad',
+  retryLoad: 'Volver a cargar',
+  noRemoteUnits: 'No hay unidades disponibles para esta cuenta.',
+
   appName: 'Aperiv Field',
   tagline: 'Trabajos y fotos en la unidad.',
   signIn: 'Iniciar sesión',
@@ -202,6 +224,8 @@ const es: { [K in keyof typeof en]: string } = {
   scanInterrupted: 'Escaneo interrumpido',
   scanMeasureFailed:
     'No se pudieron verificar los pies² con este escaneo. Intenta usar LiDAR de nuevo o continúa sin verificar.',
+  scanSavedUnverified:
+    'Escaneo guardado. No se pudieron verificar los pies².',
   scanDraftMissing:
     'No se pudo guardar el escaneo en este trabajo. Vuelve a abrir el trabajo.',
   scanRetry: 'Intentar LiDAR de nuevo',

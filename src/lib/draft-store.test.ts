@@ -495,6 +495,34 @@ describe('commitRoomScan', () => {
     );
   });
 
+  it('saves an export-only scan so the job keeps the files', async () => {
+    const storage = memoryStorage({
+      [STORE_KEY]: JSON.stringify(store(draft('a', ['room-a']))),
+    });
+    const repository = createDraftStoreRepository(storage);
+    const exportOnly = {
+      scanId: 'scan-keep',
+      jsonPath: '/scan/Room.json',
+      usdzPath: '/scan/Room.usdz',
+      source: 'export-only' as const,
+      capturedAt,
+    };
+
+    const result = await repository.commitRoomScan({
+      draftId: 'a',
+      roomId: 'room-a',
+      artifact: exportOnly,
+    });
+
+    assert.deepEqual(
+      result?.store.drafts.a.rooms[0].scanArtifact,
+      exportOnly
+    );
+    assert.equal(result?.store.drafts.a.rooms[0].scanned, true);
+    assert.equal(result?.store.drafts.a.rooms[0].measuredSqftFromScan, undefined);
+    assert.equal(result?.store.drafts.a.verificationStatus, 'unverified');
+  });
+
   it('returns null for missing draft and room IDs', async () => {
     const storage = memoryStorage({
       [STORE_KEY]: JSON.stringify(store(draft('a', ['room-a']))),

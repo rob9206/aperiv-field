@@ -26,6 +26,7 @@ export {
   draftCanBeVerified,
   legacyCompatibilitySqft,
   normalizeDraftStore,
+  roomHasSavedScan,
   roomHasVerifiedScan,
   scanMeasuredSqft,
 } from './walkthrough-schema';

@@ -1,6 +1,53 @@
-import type { Unit } from '@/lib/database.types';
+import type { Unit as DatabaseUnit, Walkthrough } from './database.types';
+export type DashboardUnit = {
+  id: string;
+  property_id: string;
+  unit_number: string;
+  status: 'to_do' | 'in_progress' | 'needs_review' | 'approved';
+  assigned_to: string | null;
+  verified_sqft: number | null;
+};
+type Unit = DashboardUnit;
 
-export const DEFAULT_DASHBOARD_PROPERTY_ID = 'default-property-id';
+export function dashboardUnits(
+  units: DatabaseUnit[],
+  walkthroughs: Walkthrough[],
+  turnovers: { unit_id: string; stage: string; started_at: string }[]
+): DashboardUnit[] {
+  return units.map((unit) => {
+    const latest = walkthroughs
+      .filter((w) => w.unit_id === unit.id && w.status === 'complete')
+      .sort(
+        (a, b) =>
+          b.captured_at.localeCompare(a.captured_at) || b.id.localeCompare(a.id)
+      )[0];
+    const turnover = turnovers
+      .filter((t) => t.unit_id === unit.id)
+      .sort((a, b) => b.started_at.localeCompare(a.started_at))[0];
+    const approved = ['work_orders', 'vendor_review', 'ready'].includes(
+      turnover?.stage ?? ''
+    );
+    return {
+      id: unit.id,
+      property_id: unit.property_id,
+      unit_number: unit.unit_number,
+      status: latest?.source_draft_id
+        ? 'needs_review'
+        : approved
+          ? 'approved'
+          : latest
+            ? 'needs_review'
+            : turnover?.stage === 'walkthrough'
+              ? 'in_progress'
+              : 'to_do',
+      assigned_to: latest?.captured_by ?? null,
+      verified_sqft:
+        latest && latest.verification_status !== 'unverified'
+          ? latest.measured_sqft
+          : null,
+    };
+  });
+}
 
 export type DashboardMetrics = {
   progress: number;
@@ -23,7 +70,9 @@ export type DashboardSnapshot = {
 
 export function buildDashboardFromUnits(units: Unit[]): DashboardSnapshot {
   const totalUnits = units.length;
-  const approvedUnits = units.filter((unit) => unit.status === 'approved').length;
+  const approvedUnits = units.filter(
+    (unit) => unit.status === 'approved'
+  ).length;
   const progress =
     totalUnits > 0 ? Math.round((approvedUnits / totalUnits) * 100) : 0;
 

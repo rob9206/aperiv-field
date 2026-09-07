@@ -88,6 +88,39 @@ describe('parseVerifiedRoomPlanMeasurement', () => {
     );
   });
 
+  it('reads object-shaped floor dimensions from Apple JSON', () => {
+    const result = parseVerifiedRoomPlanMeasurement({
+      floors: [
+        {
+          identifier: '7B2A1C0E-1111-2222-3333-444444444444',
+          dimensions: { x: 3, y: 0, z: 4 },
+          polygonCorners: [],
+        },
+      ],
+    });
+    assert.equal(result?.source, 'roomplan-floor-dimensions');
+    assert.ok(result);
+    assert.ok(Math.abs(result.measuredSqft - 12 * SQM_TO_SQFT) < 0.01);
+  });
+
+  it('reads object-shaped polygon corners from Apple JSON', () => {
+    const result = parseVerifiedRoomPlanMeasurement({
+      floors: [
+        {
+          polygonCorners: [
+            { x: 0, y: 0, z: 0 },
+            { x: 4, y: 0, z: 0 },
+            { x: 4, y: 0, z: 3 },
+            { x: 0, y: 0, z: 3 },
+          ],
+        },
+      ],
+    });
+    assert.equal(result?.source, 'roomplan-floor-polygon');
+    assert.ok(result);
+    assert.ok(Math.abs(result.measuredSqft - 12 * SQM_TO_SQFT) < 0.01);
+  });
+
   it('does not verify from walls', () => {
     assert.equal(
       parseVerifiedRoomPlanMeasurement({
