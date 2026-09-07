@@ -32,7 +32,7 @@ export default function HomeScreen() {
         setStore(next);
         void captureFileLifecycle.sweepOrphans().catch(() => undefined);
       },
-      () => setStore({ activeDraftId: null, drafts: {} })
+      () => setStore({ activeDraftId: null, drafts: {} }),
     );
   }, []);
 
@@ -41,7 +41,7 @@ export default function HomeScreen() {
       if (signedIn) {
         refreshStore(true);
       }
-    }, [signedIn, refreshStore])
+    }, [signedIn, refreshStore]),
   );
 
   const onNewJob = () => {
@@ -98,14 +98,16 @@ export default function HomeScreen() {
       <SafeAreaView style={styles.safeArea}>
         <ScrollView
           contentContainerStyle={styles.scroll}
-          showsVerticalScrollIndicator={false}>
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.topRow}>
             <View style={styles.brandBlock}>
-              <ThemedText type="title" style={styles.title}>
+              <ThemedText
+                type="smallBold"
+                themeColor="textSecondary"
+                style={styles.title}
+              >
                 {t('appName')}
-              </ThemedText>
-              <ThemedText themeColor="textSecondary" style={styles.subtitle}>
-                {t('tagline')}
               </ThemedText>
             </View>
             <LanguageToggle />
@@ -125,11 +127,6 @@ export default function HomeScreen() {
                 <ThemedText type="heading" style={styles.sectionTitle}>
                   {t('myJobs')}
                 </ThemedText>
-                {user?.email ? (
-                  <ThemedText type="small" themeColor="textSecondary">
-                    {user.email}
-                  </ThemedText>
-                ) : null}
               </View>
               {hasSaveError ? (
                 <ThemedText type="default" style={{ color: theme.danger }}>
@@ -152,21 +149,18 @@ export default function HomeScreen() {
                   {t('loading')}
                 </ThemedText>
               )}
-              <Link href="/dashboard" asChild>
-                <Pressable
-                  accessibilityRole="button"
-                  style={styles.dashboardLink}>
-                  <ThemedText type="smallBold" themeColor="accentText">
-                    {t('dashboardOpen')}
-                  </ThemedText>
-                </Pressable>
-              </Link>
+              {user?.email ? (
+                <ThemedText type="small" themeColor="textSecondary">
+                  {user.email}
+                </ThemedText>
+              ) : null}
               <Pressable
                 accessibilityRole="button"
                 onPress={() => {
                   void signOut();
                 }}
-                style={styles.signOut}>
+                style={styles.signOut}
+              >
                 <ThemedText type="small" themeColor="textSecondary">
                   {t('signOut')}
                 </ThemedText>
@@ -174,7 +168,11 @@ export default function HomeScreen() {
             </>
           ) : (
             <View style={styles.signedOut}>
-              <ThemedText type="default" themeColor="textSecondary" style={styles.signedOutCopy}>
+              <ThemedText
+                type="default"
+                themeColor="textSecondary"
+                style={styles.signedOutCopy}
+              >
                 {t('signInToStart')}
               </ThemedText>
               <Link href="/login" asChild>
@@ -183,7 +181,8 @@ export default function HomeScreen() {
                     styles.signInButton,
                     { backgroundColor: theme.accent },
                     pressed && styles.pressed,
-                  ]}>
+                  ]}
+                >
                   <ThemedText type="default" style={styles.signInLabel}>
                     {t('signIn')}
                   </ThemedText>
@@ -221,21 +220,16 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
   },
   title: {
-    fontSize: 34,
-    lineHeight: 40,
-    fontWeight: '700',
-  },
-  subtitle: {
-    maxWidth: 280,
     fontSize: 15,
     lineHeight: 22,
+    fontWeight: '700',
   },
   sectionHeader: {
     gap: Spacing.one,
   },
   sectionTitle: {
-    fontSize: 22,
-    lineHeight: 28,
+    fontSize: 28,
+    lineHeight: 34,
   },
   signedOut: {
     gap: Spacing.four,
@@ -255,12 +249,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 17,
-  },
-  dashboardLink: {
-    minHeight: MinTouchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: Spacing.two,
   },
   signOut: {
     minHeight: MinTouchTarget,

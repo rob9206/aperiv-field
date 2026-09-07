@@ -15,6 +15,7 @@ export type Asset = {
   path: string;
   uri: string;
   contentType: string;
+  roomName?: string;
 };
 export type SubmissionPayload = {
   unit_id: string;
@@ -109,6 +110,7 @@ export function buildSubmission(
           bucket: 'walkthrough-photos',
           path,
           uri: photo.uri,
+          roomName: room.name,
           contentType:
             extension === 'jpg' ? 'image/jpeg' : `image/${extension}`,
         });
@@ -128,12 +130,14 @@ export function buildSubmission(
         bucket: 'walkthrough-scans',
         path: scanPath,
         uri: scan.usdzPath,
+        roomName: room.name,
         contentType: 'model/vnd.usdz+zip',
       });
       assets.push({
         bucket: 'walkthrough-scans',
         path: jsonPath,
         uri: scan.jsonPath,
+        roomName: room.name,
         contentType: 'application/json',
       });
     }

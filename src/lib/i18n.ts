@@ -2,17 +2,44 @@ export type AppLocale = 'en' | 'es';
 
 const en = {
   sendToManager: 'Send to manager',
-  sendKeepsCopy: 'Choose the property and unit for this saved job. Your copy stays on this phone.',
+  reviewDestination: 'Where should this go?',
+  savedJob: 'Saved job',
+  changeProperty: 'Change property',
+  sendSelectUnitHint: 'Choose a property and unit to enable Send.',
+  sendToLabel: 'Sending to:',
+  sentTitle: 'Job sent',
+  sendingShort: 'Sending…',
+  sendKeepsCopy:
+    'Choose the property and unit for this saved job. Your copy stays on this phone.',
   sentToManager: 'Sent to manager. Your saved job is still on this phone.',
-  sendFailed: 'Could not send this job. Your saved copy is safe. Check the unit and connection, then retry.',
+  sendFailed:
+    'Could not send this job. Your saved copy is safe. Check the unit and connection, then retry.',
+  sendMissingScan:
+    'A saved scan file could not be found. Open the saved job and scan that room again, then save and send.',
+  sendMissingPhoto:
+    'A saved photo could not be found. Open the saved job, replace that photo, then save and send.',
+  sendFileTooLarge:
+    'A file is too large to upload. Open the saved job and replace that capture.',
+  sendUploadFailed:
+    'The file upload did not finish. Check your connection and tap Retry send.',
+  sendFinalizeFailed:
+    'The files uploaded, but the submission could not be finalized. Tap Retry send.',
+  sendJobChanged: 'This job changed. Reopen it, save, and send again.',
+  loadSendFailed:
+    'Could not load the saved job or available units. Tap Reload.',
+  retrySend: 'Retry send',
+  openSavedJob: 'Open saved job',
   sending: 'Sending… Keep this screen open.',
   chooseProperty: 'Choose property',
   chooseUnit: 'Choose unit',
   retryLoad: 'Reload',
   noRemoteUnits: 'No units are available for this account.',
 
-
   appName: 'Aperiv Field',
+  cancel: 'Cancel',
+  optional: 'Optional',
+  moreOptions: 'More options',
+  noVerifiedTotal: 'No verified unit total.',
   tagline: 'On-site unit jobs and photos.',
   signIn: 'Sign in',
   signOut: 'Sign out',
@@ -158,9 +185,34 @@ const en = {
 
 const es: { [K in keyof typeof en]: string } = {
   sendToManager: 'Enviar al administrador',
-  sendKeepsCopy: 'Elige la propiedad y unidad de este trabajo guardado. Tu copia permanece en este teléfono.',
-  sentToManager: 'Enviado al administrador. Tu trabajo sigue guardado en este teléfono.',
-  sendFailed: 'No se pudo enviar. Tu copia está guardada. Revisa la unidad y conexión, e inténtalo de nuevo.',
+  reviewDestination: '¿A dónde lo enviamos?',
+  savedJob: 'Trabajo guardado',
+  changeProperty: 'Cambiar propiedad',
+  sendSelectUnitHint: 'Elige una propiedad y unidad para activar Enviar.',
+  sendToLabel: 'Enviar a:',
+  sentTitle: 'Trabajo enviado',
+  sendingShort: 'Enviando…',
+  sendKeepsCopy:
+    'Elige la propiedad y unidad de este trabajo guardado. Tu copia permanece en este teléfono.',
+  sentToManager:
+    'Enviado al administrador. Tu trabajo sigue guardado en este teléfono.',
+  sendFailed:
+    'No se pudo enviar. Tu copia está guardada. Revisa la unidad y conexión, e inténtalo de nuevo.',
+  sendMissingScan:
+    'No se encontró un archivo del escaneo guardado. Abre el trabajo, escanea esa habitación otra vez, guarda y envía.',
+  sendMissingPhoto:
+    'No se encontró una foto guardada. Abre el trabajo, reemplaza esa foto, guarda y envía.',
+  sendFileTooLarge:
+    'Un archivo es demasiado grande para subirlo. Abre el trabajo y reemplaza esa captura.',
+  sendUploadFailed:
+    'La carga del archivo no terminó. Revisa tu conexión y pulsa Reintentar envío.',
+  sendFinalizeFailed:
+    'Los archivos se subieron, pero no se pudo finalizar el envío. Pulsa Reintentar envío.',
+  sendJobChanged: 'Este trabajo cambió. Ábrelo, guarda y vuelve a enviarlo.',
+  loadSendFailed:
+    'No se pudo cargar el trabajo o las unidades disponibles. Pulsa Volver a cargar.',
+  retrySend: 'Reintentar envío',
+  openSavedJob: 'Abrir trabajo guardado',
   sending: 'Enviando… Mantén esta pantalla abierta.',
   chooseProperty: 'Elegir propiedad',
   chooseUnit: 'Elegir unidad',
@@ -168,6 +220,10 @@ const es: { [K in keyof typeof en]: string } = {
   noRemoteUnits: 'No hay unidades disponibles para esta cuenta.',
 
   appName: 'Aperiv Field',
+  cancel: 'Cancelar',
+  optional: 'Opcional',
+  moreOptions: 'Más opciones',
+  noVerifiedTotal: 'Sin superficie total verificada.',
   tagline: 'Trabajos y fotos en la unidad.',
   signIn: 'Iniciar sesión',
   signOut: 'Cerrar sesión',
@@ -218,14 +274,12 @@ const es: { [K in keyof typeof en]: string } = {
   scanDone: 'Listo',
   scanPreparing: 'Preparando el escaneo…',
   scanProcessing: 'Procesando el escaneo…',
-  scanKeepOpen:
-    'Mantén esta pantalla abierta mientras se crea el modelo.',
+  scanKeepOpen: 'Mantén esta pantalla abierta mientras se crea el modelo.',
   scanErrorTitle: 'Problema con el escaneo',
   scanInterrupted: 'Escaneo interrumpido',
   scanMeasureFailed:
     'No se pudieron verificar los pies² con este escaneo. Intenta usar LiDAR de nuevo o continúa sin verificar.',
-  scanSavedUnverified:
-    'Escaneo guardado. No se pudieron verificar los pies².',
+  scanSavedUnverified: 'Escaneo guardado. No se pudieron verificar los pies².',
   scanDraftMissing:
     'No se pudo guardar el escaneo en este trabajo. Vuelve a abrir el trabajo.',
   scanRetry: 'Intentar LiDAR de nuevo',
