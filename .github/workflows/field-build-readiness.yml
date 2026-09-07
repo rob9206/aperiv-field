@@ -63,7 +63,9 @@ jobs:
             --json --non-interactive > "$RUNNER_TEMP/field-comparison.json"
           node <<'NODE'
           const fs = require('node:fs');
-          const comparison = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/field-comparison.json`, 'utf8'));
+          const output = fs.readFileSync(`${process.env.RUNNER_TEMP}/field-comparison.json`, 'utf8');
+          // EAS 21 prints an environment message before its JSON response.
+          const comparison = JSON.parse(output.slice(output.indexOf('{'), output.lastIndexOf('}') + 1));
           const installed = comparison.fingerprint1?.hash;
           const candidate = comparison.fingerprint2?.hash;
           if (!installed || !candidate) throw new Error('Fingerprint comparison unavailable');

@@ -24,6 +24,20 @@ This branch also includes the two scan-retention commits from [Field PR #13](htt
 
 ## Release order and remaining acceptance
 
+### Confirmed tester and release path (2026-09-07)
+
+Rob is testing on an iPhone 15 Pro Max with TestFlight build 13. The authenticated EAS check confirmed build ID `14228333-9d49-421d-add2-06a257edbb5a`, production profile/channel, runtime `d0791770178bd021d9a4444d1cf738ec0e405752`, and source `c92b39625019df7daaa7118055aa38c809ba3a87`. Current main includes native scanner/linking changes that are absent from that installed runtime. A matching JavaScript-only OTA must not be forced onto build 13.
+
+The `field-test` build profile inherits the store/TestFlight setup, enables sending only in that profile, and uses the separate `field-submission-test` update channel. Create a new signed TestFlight binary for this milestone. Its build number comes from EAS auto-increment; do not assume the next number is 14.
+
+`.github/workflows/field-build-readiness.yml` reads installed build metadata and compares native fingerprints using the existing Expo repository credential. It never starts builds or publishes updates.
+
+`.github/workflows/field-testflight.yml` is prepared but has not been run. After the database migration and companion web release are approved and ready, it can be deliberately triggered by creating/pushing `release/field-submission-test` from the reviewed feature commit, or by manual dispatch with `backend_ready=true`. It validates Field, checks that the preview environment targets the existing Aperiv project and exposes the new submission columns, then builds and submits through the `field-test` profile. The workflow stops before building if the backend check fails. It does not change the production OTA channel or release an App Store version.
+
+The configured test target is the existing Aperiv database. Using it requires approval to apply the additive migration and release the companion web change before the enabled phone test. To use a separate staging database instead, change the approved project reference and both apps' test environment settings first.
+
+### Acceptance sequence
+
 1. Apply the companion migration to staging, then release the companion web app there.
 2. Build an internal Field bundle against staging with sending enabled. Use a binary containing `ExpoRoomScan`, not Expo Go.
 3. On a LiDAR device, save one room with a photo and a measured scan. Send to a real test unit. Confirm exactly one completed row, matching room measurements/findings, working photo and scan links, and **Awaiting review** on web. Confirm local files still open/share.
