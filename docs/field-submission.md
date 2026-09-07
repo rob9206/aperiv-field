@@ -67,4 +67,16 @@ The first phone attempt created one pending Field row, but no assets arrived. In
 
 The send screen now scrolls to its result and distinguishes missing scan/photo files, oversized files, upload errors, and finalization errors in English and Spanish. It retains the selected target for retry and provides a link back to the saved job. Missing attachments are never silently dropped or marked complete. If an attachment is already absent, the affected room must be recaptured.
 
-The dedicated test update workflow compares its native fingerprint with build 14 before publishing to `field-submission-test`. It does not publish to the production or preview channels. Phone retry acceptance remains required.
+The dedicated test update workflow compares its native fingerprint with build 14 before publishing to `field-submission-test`. It does not publish to the production or preview channels.
+
+## Phone submission and Send screen follow-up (2026-09-07)
+
+Build 14 was built and uploaded to TestFlight after the companion migration and web release. The upload fix was published to its compatible test channel. A subsequent physical-device submission completed: three photos and the USDZ/JSON scan exports are present in private storage. Its Living room has a verified floor-polygon measurement; the overall walkthrough correctly remains Unverified because the other rooms were skipped. The earlier pending attempt remains preserved. Authenticated manager-screen viewing and interrupted-network acceptance still require device testing.
+
+The Send screen now uses a teal primary action, a persistent bottom action area with the selected destination, and a loading indicator. The selected property collapses into a summary and units use a compact two-column layout with checkmarks. Changing the property clears the unit selection. A smaller heading, corrected safe-area padding, and a distinct sent confirmation replace the long, flat button list. All new copy is available in English and Spanish. This is a JavaScript-only change targeting the same build 14 runtime; native rendering still needs physical-device review.
+
+### Demo cleanup prerequisites
+
+Read-only inventory found nine seeded properties, 72 units, and 932 invoices with the deterministic seed invoice IDs. Of ten walkthroughs, only one has the explicit walkthrough ID from `supabase/seed.sql`; seven older non-seed walkthroughs and both Field submissions must be preserved until their disposition is known.
+
+The new successful capture is linked to the seeded Vista del Mar unit 6B. Deleting that property or unit cascades to its walkthrough and photo rows. The saved Field revision also locks its destination, so direct reassignment is not a normal application update. Establish the actual property/unit roster and a concrete retention/reassignment plan before removing the sample portfolio. Do not run `seed.sql` as cleanup: it truncates the application tables. Preserve auth accounts and stored capture files. Some companion web views also contain demo content in code, so database cleanup alone does not remove every demo screen.

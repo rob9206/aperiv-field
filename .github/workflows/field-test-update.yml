@@ -1,4 +1,4 @@
-name: Publish the Field upload fix to build 14
+name: Publish Field improvements to build 14
 
 on:
   push:
@@ -27,7 +27,7 @@ jobs:
           node-version: 22.23.1
           cache: npm
       - run: npm ci --include=dev
-      - name: Validate the capture and upload fix
+      - name: Validate Field capture and submission
         run: |
           npx tsc --noEmit
           npm run lint
@@ -58,4 +58,4 @@ jobs:
           console.log(JSON.stringify({ build: '14', installed, candidate, compatible: true }));
           NODE
       - name: Publish to the existing test channel
-        run: eas update --channel field-submission-test --environment preview --platform ios --message "Fix saved capture uploads and retry feedback" --non-interactive
+        run: eas update --channel field-submission-test --environment preview --platform ios --message "Clear teal Send action, compact destination picker, and sent confirmation" --non-interactive

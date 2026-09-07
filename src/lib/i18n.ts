@@ -2,6 +2,13 @@ export type AppLocale = 'en' | 'es';
 
 const en = {
   sendToManager: 'Send to manager',
+  reviewDestination: 'Where should this go?',
+  savedJob: 'Saved job',
+  changeProperty: 'Change property',
+  sendSelectUnitHint: 'Choose a property and unit to enable Send.',
+  sendToLabel: 'Sending to:',
+  sentTitle: 'Job sent',
+  sendingShort: 'Sending…',
   sendKeepsCopy: 'Choose the property and unit for this saved job. Your copy stays on this phone.',
   sentToManager: 'Sent to manager. Your saved job is still on this phone.',
   sendFailed: 'Could not send this job. Your saved copy is safe. Check the unit and connection, then retry.',
@@ -167,6 +174,13 @@ const en = {
 
 const es: { [K in keyof typeof en]: string } = {
   sendToManager: 'Enviar al administrador',
+  reviewDestination: '¿A dónde lo enviamos?',
+  savedJob: 'Trabajo guardado',
+  changeProperty: 'Cambiar propiedad',
+  sendSelectUnitHint: 'Elige una propiedad y unidad para activar Enviar.',
+  sendToLabel: 'Enviar a:',
+  sentTitle: 'Trabajo enviado',
+  sendingShort: 'Enviando…',
   sendKeepsCopy: 'Elige la propiedad y unidad de este trabajo guardado. Tu copia permanece en este teléfono.',
   sentToManager: 'Enviado al administrador. Tu trabajo sigue guardado en este teléfono.',
   sendFailed: 'No se pudo enviar. Tu copia está guardada. Revisa la unidad y conexión, e inténtalo de nuevo.',
