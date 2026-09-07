@@ -14,7 +14,7 @@ export function dashboardUnits(
   walkthroughs: Walkthrough[],
   turnovers: { unit_id: string; stage: string; started_at: string }[]
 ): DashboardUnit[] {
-  return units.map((unit) => {
+  return units.filter(unit => unit.status !== 'archived').map((unit) => {
     const latest = walkthroughs
       .filter((w) => w.unit_id === unit.id && w.status === 'complete')
       .sort(

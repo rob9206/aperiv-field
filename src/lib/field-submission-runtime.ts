@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { activeRoster } from './active-roster';
 import type { Json } from './database.types';
 import type { ManualWalkthroughDraft } from './walkthrough-draft';
 import { FieldSubmissionError, uploadFieldAsset } from './field-upload';
@@ -26,7 +27,7 @@ export async function loadFieldRoster() {
     supabase.from('units').select('*').order('unit_number'),
   ]);
   if (properties.error || units.error) throw new Error('Could not load units');
-  return { properties: properties.data ?? [], units: units.data ?? [] };
+  return activeRoster(properties.data ?? [], units.data ?? []);
 }
 
 const pending = new Map<string, Promise<string>>();
