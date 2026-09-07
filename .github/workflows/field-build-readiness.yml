@@ -1,0 +1,73 @@
+name: Check Field TestFlight compatibility
+
+on:
+  push:
+    branches: [codex/field-submission-flow]
+    paths: [.github/workflows/field-build-readiness.yml]
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: Installed TestFlight build number
+        type: string
+        default: '13'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.23.1
+          cache: npm
+      - run: npm ci --include=dev
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: 21.2.0
+          packager: npm
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Read installed build metadata
+        id: installed
+        env:
+          BUILD_NUMBER: ${{ inputs.build_number || '13' }}
+        run: |
+          [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]] || exit 1
+          eas build:list --platform ios --distribution store --status finished \
+            --app-build-version "$BUILD_NUMBER" --limit 10 --json --non-interactive \
+            > "$RUNNER_TEMP/field-builds.json"
+          node <<'NODE'
+          const fs = require('node:fs');
+          const builds = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/field-builds.json`, 'utf8'));
+          if (builds.length !== 1) throw new Error(`Expected one matching build; found ${builds.length}`);
+          const build = builds[0];
+          if (!/^[0-9a-f-]{36}$/i.test(build.id)) throw new Error('Invalid build ID');
+          const report = {
+            id: build.id, appBuildVersion: build.appBuildVersion,
+            channel: build.channel, runtimeVersion: build.runtimeVersion,
+            buildProfile: build.buildProfile, gitCommitHash: build.gitCommitHash,
+          };
+          console.log(JSON.stringify(report, null, 2));
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `build_id=${build.id}\n`);
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Installed build\n\n\`\`\`json\n${JSON.stringify(report, null, 2)}\n\`\`\`\n`);
+          NODE
+      - name: Compare installed native runtime with this commit
+        env:
+          BUILD_ID: ${{ steps.installed.outputs.build_id }}
+        run: |
+          eas fingerprint:compare --build-id "$BUILD_ID" --environment production \
+            --json --non-interactive > "$RUNNER_TEMP/field-comparison.json"
+          node <<'NODE'
+          const fs = require('node:fs');
+          const comparison = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/field-comparison.json`, 'utf8'));
+          const installed = comparison.fingerprint1?.hash;
+          const candidate = comparison.fingerprint2?.hash;
+          if (!installed || !candidate) throw new Error('Fingerprint comparison unavailable');
+          const result = { installed, candidate, compatible: installed === candidate };
+          console.log(JSON.stringify(result, null, 2));
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Compatibility\n\n\`\`\`json\n${JSON.stringify(result, null, 2)}\n\`\`\`\n\nRead-only check: no build, update, submission, or channel change was requested.\n`);
+          NODE
