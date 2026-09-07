@@ -6,54 +6,193 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
-export type UnitStatus = 'to_do' | 'in_progress' | 'needs_review' | 'approved';
-export type WalkthroughStatus = 'draft' | 'submitted' | 'approved';
-
-type TableDef<Row extends Record<string, unknown>> = {
-  Row: Row;
-  Insert: Partial<Row> & Record<string, unknown>;
-  Update: Partial<Row>;
-  Relationships: [];
-};
-
-export interface Database {
+// Field-facing subset of Aperiv's shared database contract. Keep in sync with
+// aperiv/lib/database.types.ts and its Field submission migration.
+export type Database = {
   public: {
     Tables: {
-      properties: TableDef<{
-        id: string;
-        name: string;
-        created_at: string;
-      }>;
-      units: TableDef<{
-        id: string;
-        property_id: string;
-        unit_number: string;
-        status: UnitStatus;
-        assigned_to: string | null;
-        verified_sqft: number | null;
-      }>;
-      walkthroughs: TableDef<{
-        id: string;
-        unit_id: string;
-        crew_id: string;
-        status: WalkthroughStatus;
-        issues_count: number;
-        created_at: string;
-      }>;
-      crew: TableDef<{
-        id: string;
-        name: string;
-        role: string;
-      }>;
+      properties: {
+        Row: {
+          id: string;
+          name: string;
+          address: string;
+          region: string;
+          units_count: number;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          address: string;
+          region: string;
+          units_count: number;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          address?: string;
+          region?: string;
+          units_count?: number;
+        };
+        Relationships: [];
+      };
+      turnovers: {
+        Row: {
+          id: string;
+          unit_id: string;
+          stage:
+            | 'move_out'
+            | 'walkthrough'
+            | 'work_orders'
+            | 'vendor_review'
+            | 'ready';
+          started_at: string;
+          target_at: string;
+          expected_ready_at: string;
+          previous_tenant_name: string;
+          previous_lease_term: string;
+          deposit_amount: number;
+          deposit_withheld: number;
+          estimated_cost: number;
+          actual_cost: number;
+        };
+        Insert: {
+          id?: string;
+          unit_id: string;
+          stage:
+            | 'move_out'
+            | 'walkthrough'
+            | 'work_orders'
+            | 'vendor_review'
+            | 'ready';
+          started_at: string;
+          target_at: string;
+          expected_ready_at: string;
+          previous_tenant_name: string;
+          previous_lease_term: string;
+          deposit_amount: number;
+          deposit_withheld: number;
+          estimated_cost: number;
+          actual_cost: number;
+        };
+        Update: {
+          id?: string;
+          unit_id?: string;
+          stage?:
+            | 'move_out'
+            | 'walkthrough'
+            | 'work_orders'
+            | 'vendor_review'
+            | 'ready';
+          started_at?: string;
+          target_at?: string;
+          expected_ready_at?: string;
+          previous_tenant_name?: string;
+          previous_lease_term?: string;
+          deposit_amount?: number;
+          deposit_withheld?: number;
+          estimated_cost?: number;
+          actual_cost?: number;
+        };
+        Relationships: [];
+      };
+      units: {
+        Row: {
+          id: string;
+          property_id: string;
+          unit_number: string;
+          building: string;
+          floor: number;
+          bedrooms: number;
+          bathrooms: number;
+          recorded_sqft: number;
+          status: string;
+        };
+        Insert: {
+          id?: string;
+          property_id: string;
+          unit_number: string;
+          building: string;
+          floor: number;
+          bedrooms: number;
+          bathrooms: number;
+          recorded_sqft: number;
+          status: string;
+        };
+        Update: {
+          id?: string;
+          property_id?: string;
+          unit_number?: string;
+          building?: string;
+          floor?: number;
+          bedrooms?: number;
+          bathrooms?: number;
+          recorded_sqft?: number;
+          status?: string;
+        };
+        Relationships: [];
+      };
+      walkthroughs: {
+        Row: {
+          status: 'in_progress' | 'complete';
+          source_draft_id: string | null;
+          verification_status: 'verified' | 'unverified' | null;
+          id: string;
+          unit_id: string;
+          captured_at: string;
+          captured_by: string;
+          scan_duration_seconds: number;
+          device: string;
+          photo_count: number;
+          measured_sqft: number;
+          condition_summary: string;
+          rooms: Json;
+          condition_findings: Json;
+          total_estimated_amount: number;
+        };
+        Insert: {
+          status?: 'in_progress' | 'complete';
+          source_draft_id?: string | null;
+          verification_status?: 'verified' | 'unverified' | null;
+          id?: string;
+          unit_id: string;
+          captured_at: string;
+          captured_by: string;
+          scan_duration_seconds: number;
+          device: string;
+          photo_count: number;
+          measured_sqft: number;
+          condition_summary: string;
+          rooms: Json;
+          condition_findings: Json;
+          total_estimated_amount: number;
+        };
+        Update: {
+          status?: 'in_progress' | 'complete';
+          source_draft_id?: string | null;
+          verification_status?: 'verified' | 'unverified' | null;
+          id?: string;
+          unit_id?: string;
+          captured_at?: string;
+          captured_by?: string;
+          scan_duration_seconds?: number;
+          device?: string;
+          photo_count?: number;
+          measured_sqft?: number;
+          condition_summary?: string;
+          rooms?: Json;
+          condition_findings?: Json;
+          total_estimated_amount?: number;
+        };
+        Relationships: [];
+      };
     };
-    Views: Record<string, never>;
-    Functions: Record<string, never>;
-    Enums: Record<string, never>;
-    CompositeTypes: Record<string, never>;
+    Views: { [_ in never]: never };
+    Functions: { [_ in never]: never };
+    Enums: { [_ in never]: never };
+    CompositeTypes: { [_ in never]: never };
   };
-}
+};
 
 export type Property = Database['public']['Tables']['properties']['Row'];
 export type Unit = Database['public']['Tables']['units']['Row'];
 export type Walkthrough = Database['public']['Tables']['walkthroughs']['Row'];
-export type Crew = Database['public']['Tables']['crew']['Row'];

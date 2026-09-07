@@ -17,13 +17,14 @@ import {
 export type ScanMeasurementSource =
   | 'roomplan-floor-polygon'
   | 'roomplan-floor-dimensions'
-  | 'wall-estimate';
+  | 'wall-estimate'
+  | 'export-only';
 
 export type RoomScanArtifact = {
   scanId: string;
   jsonPath: string;
   usdzPath: string;
-  measuredSqft: number;
+  measuredSqft?: number;
   source: ScanMeasurementSource;
   capturedAt: string;
 };
@@ -35,6 +36,7 @@ const VERIFIED_SOURCES = new Set<ScanMeasurementSource>([
 const SCAN_SOURCES = new Set<ScanMeasurementSource>([
   ...VERIFIED_SOURCES,
   'wall-estimate',
+  'export-only',
 ]);
 const ROOM_CONDITIONS = new Set<RoomCondition>(['good', 'watch', 'issue']);
 const FINDING_SEVERITIES = new Set<FindingSeverity>([
@@ -134,19 +136,34 @@ function normalizeScanArtifact(value: unknown): RoomScanArtifact | null {
     !isSafeScanId(value.scanId) ||
     !isSafeArtifactPath(value.jsonPath) ||
     !isSafeArtifactPath(value.usdzPath) ||
-    !isValidMeasuredSqft(value.measuredSqft) ||
     typeof value.source !== 'string' ||
     !SCAN_SOURCES.has(value.source as ScanMeasurementSource) ||
     !isDateString(value.capturedAt)
   ) {
     return null;
   }
+
+  const source = value.source as ScanMeasurementSource;
+  if (source === 'export-only') {
+    return {
+      scanId: value.scanId,
+      jsonPath: value.jsonPath,
+      usdzPath: value.usdzPath,
+      source,
+      capturedAt: value.capturedAt,
+    };
+  }
+
+  if (!isValidMeasuredSqft(value.measuredSqft)) {
+    return null;
+  }
+
   return {
     scanId: value.scanId,
     jsonPath: value.jsonPath,
     usdzPath: value.usdzPath,
     measuredSqft: value.measuredSqft,
-    source: value.source as ScanMeasurementSource,
+    source,
     capturedAt: value.capturedAt,
   };
 }
@@ -270,6 +287,24 @@ function normalizeDraft(
   return draft;
 }
 
+export function roomHasSavedScan(
+  room: Pick<RoomCapture, 'scanArtifact' | 'skipped'>
+): boolean {
+  const artifact = normalizeScanArtifact(room.scanArtifact);
+  return (
+    room.skipped !== true &&
+    artifact != null &&
+    (artifact.source === 'export-only' ||
+      VERIFIED_SOURCES.has(artifact.source))
+  );
+}
+
+export function isPersistableScanArtifact(
+  artifact: RoomScanArtifact | undefined
+): boolean {
+  return roomHasSavedScan({ scanArtifact: artifact, skipped: false });
+}
+
 export function roomHasVerifiedScan(
   room: Pick<RoomCapture, 'scanArtifact' | 'skipped'>
 ): boolean {
@@ -285,7 +320,9 @@ export function roomHasVerifiedScan(
 export function scanMeasuredSqft(rooms: RoomCapture[]): number {
   return rooms.reduce(
     (sum, room) =>
-      roomHasVerifiedScan(room) ? sum + room.scanArtifact!.measuredSqft : sum,
+      roomHasVerifiedScan(room)
+        ? sum + (room.scanArtifact?.measuredSqft ?? 0)
+        : sum,
     0
   );
 }

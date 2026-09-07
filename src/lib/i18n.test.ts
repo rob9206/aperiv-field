@@ -39,6 +39,14 @@ describe('t', () => {
       t('es', 'scanMeasureFailed'),
       'No se pudieron verificar los pies² con este escaneo. Intenta usar LiDAR de nuevo o continúa sin verificar.'
     );
+    assert.equal(
+      t('en', 'scanSavedUnverified'),
+      'Scan saved. Square feet could not be verified.'
+    );
+    assert.equal(
+      t('es', 'scanSavedUnverified'),
+      'Escaneo guardado. No se pudieron verificar los pies².'
+    );
     assert.equal(t('en', 'continueUnverified'), 'Continue unverified');
     assert.equal(t('es', 'continueUnverified'), 'Continuar sin verificar');
     assert.equal(t('en', 'shareScanFailed').includes('share'), true);

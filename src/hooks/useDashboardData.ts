@@ -1,87 +1,82 @@
-import { useEffect, useState } from 'react';
-
-import {
-  buildDashboardFromUnits,
-  type DashboardColumns,
-  type DashboardMetrics,
-} from '@/lib/dashboard-data';
+import { useCallback, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { buildDashboardFromUnits, dashboardUnits } from '@/lib/dashboard-data';
+import type { Property } from '@/lib/database.types';
 import { supabase } from '@/lib/supabase';
-
-export interface DashboardData {
-  metrics: DashboardMetrics;
-  columns: DashboardColumns;
-  loading: boolean;
-  error: string | null;
-}
-
-const emptyDashboard: DashboardData = {
-  metrics: { progress: 0, awaitingReview: 0, totalSqft: 0, activeCrew: 0 },
-  columns: { toDo: [], inProgress: [], needsReview: [], approved: [] },
-  loading: true,
-  error: null,
-};
+import { useAuth } from '@/providers/auth-provider';
 
 export function useDashboardData(propertyId: string) {
-  const [data, setData] = useState<DashboardData>(emptyDashboard);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function fetchData() {
-      if (!propertyId) {
-        setData({
-          ...emptyDashboard,
-          loading: false,
-          error: 'Could not load this property.',
-        });
-        return;
-      }
-
-      if (!supabase) {
-        setData({
-          ...emptyDashboard,
-          loading: false,
-          error: 'Could not load this property.',
-        });
-        return;
-      }
-
-      try {
-        const { data: units, error: unitsError } = await supabase
-          .from('units')
-          .select('*')
-          .eq('property_id', propertyId);
-
-        if (unitsError) {
-          throw unitsError;
+  const userId = useAuth().user?.id;
+  const queryKey = `${userId ?? ''}:${propertyId}`;
+  const [data, setData] = useState({
+    ...buildDashboardFromUnits([]),
+    properties: [] as Property[],
+    queryKey: '',
+    loading: true,
+    error: null as string | null,
+  });
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      if (!userId) return;
+      async function fetchData() {
+        try {
+          if (!supabase) throw new Error('Sign in');
+          const [properties, units, walkthroughs, turnovers] =
+            await Promise.all([
+              supabase.from('properties').select('*').order('name'),
+              supabase.from('units').select('*'),
+              supabase
+                .from('walkthroughs')
+                .select('*')
+                .eq('status', 'complete'),
+              supabase.from('turnovers').select('unit_id,stage,started_at'),
+            ]);
+          if (
+            properties.error ||
+            units.error ||
+            walkthroughs.error ||
+            turnovers.error
+          )
+            throw new Error('Load failed');
+          const cards = dashboardUnits(
+            (units.data ?? []).filter(
+              (u) => !propertyId || u.property_id === propertyId
+            ),
+            walkthroughs.data ?? [],
+            turnovers.data ?? []
+          );
+          if (!cancelled)
+            setData({
+              ...buildDashboardFromUnits(cards),
+              properties: properties.data ?? [],
+              queryKey,
+              loading: false,
+              error: null,
+            });
+        } catch {
+          if (!cancelled)
+            setData({
+              ...buildDashboardFromUnits([]),
+              properties: [],
+              queryKey,
+              loading: false,
+              error: 'Could not load this property.',
+            });
         }
-
-        const snapshot = buildDashboardFromUnits(units ?? []);
-        if (!cancelled) {
-          setData({
-            metrics: snapshot.metrics,
-            columns: snapshot.columns,
-            loading: false,
-            error: null,
-          });
-        }
-      } catch {
-        if (!cancelled) {
-          setData((prev) => ({
-            ...prev,
-            loading: false,
-            error: 'Could not load this property.',
-          }));
-        }
       }
-    }
-
-    void fetchData();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [propertyId]);
-
-  return data;
+      void fetchData();
+      return () => {
+        cancelled = true;
+      };
+    }, [propertyId, userId, queryKey])
+  );
+  return data.queryKey === queryKey
+    ? data
+    : {
+        ...buildDashboardFromUnits([]),
+        properties: [],
+        loading: true,
+        error: null,
+      };
 }

@@ -22,12 +22,25 @@
       "environment": "preview",
       "autoIncrement": true
     },
+    "field-test": {
+      "extends": "preview",
+      "channel": "field-submission-test",
+      "env": {
+        "EXPO_PUBLIC_FIELD_SUBMISSION_ENABLED": "true"
+      }
+    },
     "production": {
       "autoIncrement": true,
       "channel": "production"
     }
   },
   "submit": {
+    "field-test": {
+      "ios": {
+        "ascAppId": "6790955096",
+        "appleTeamId": "94MS8P8TZZ"
+      }
+    },
     "preview": {
       "ios": {
         "ascAppId": "6790955096",

@@ -1,0 +1,53 @@
+name: Build Field submission TestFlight
+
+on:
+  # Creating/pushing this release branch deliberately requests a test build.
+  # Feature-branch pushes and main do not publish this test app.
+  push:
+    branches: [release/field-submission-test]
+  workflow_dispatch:
+    inputs:
+      backend_ready:
+        description: The companion database migration and web review are ready
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: field-submission-testflight
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event_name == 'push' || inputs.backend_ready
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      # Existing Aperiv project. A different test database requires an explicit change.
+      FIELD_TEST_PROJECT_REF: iszwqutiayujzjolfesp
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.23.1
+          cache: npm
+      - run: npm ci --include=dev
+      - name: Validate Field
+        run: |
+          npx tsc --noEmit
+          npm run lint
+          node --experimental-strip-types --test src/lib/*.test.ts
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: 21.2.0
+          packager: npm
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Check the selected backend before enabling sending
+        run: |
+          eas env:pull --environment preview --path "$RUNNER_TEMP/field-preview.env" --non-interactive
+          node --env-file="$RUNNER_TEMP/field-preview.env" scripts/check-field-backend.mjs
+      - name: Build and submit to TestFlight
+        run: eas build --platform ios --profile field-test --auto-submit-with-profile field-test --non-interactive

@@ -13,6 +13,7 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { captureFileLifecycle } from '@/lib/capture-files-runtime';
 import { readVerifiedMeasurementFromExport } from '@/lib/read-roomplan-measure';
+import { buildRoomScanArtifact } from '@/lib/scan-export';
 import type { TranslationKey } from '@/lib/i18n';
 import {
   SCAN_PROCESSING_TIMEOUT_MS,
@@ -181,19 +182,12 @@ export default function WalkthroughScreen() {
         await captureFileLifecycle.cleanupExportedScanPaths(results);
         return;
       }
-      if (measurement === null) {
-        await captureFileLifecycle.cleanupExportedScanPaths(results);
-        showScanError('scanMeasureFailed', scan.target);
-        return;
-      }
-      const artifact: RoomScanArtifact = {
-        scanId: scan.scanId,
-        jsonPath: results.jsonPath,
-        usdzPath: results.usdzPath,
-        measuredSqft: measurement.measuredSqft,
-        source: measurement.source,
-        capturedAt: new Date().toISOString(),
-      };
+      const artifact: RoomScanArtifact = buildRoomScanArtifact(
+        results,
+        scan.scanId,
+        measurement,
+        new Date().toISOString()
+      );
       const committed = await captureFileLifecycle.commitRoomScan({
         draftId: scan.target.draftId,
         roomId: scan.target.roomId,

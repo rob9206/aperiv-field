@@ -3,8 +3,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import type { Unit } from '@/lib/database.types';
-import type { DashboardColumns } from '@/lib/dashboard-data';
+import type { DashboardUnit as Unit, DashboardColumns } from '@/lib/dashboard-data';
 
 export type KanbanLabels = {
   columnToDo: string;

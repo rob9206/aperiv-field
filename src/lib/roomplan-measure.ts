@@ -24,6 +24,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function asVec3(value: unknown): number[] | null {
+  if (Array.isArray(value) && value.length === 3 && value.every(isFiniteNumber)) {
+    return value;
+  }
+  if (
+    isRecord(value) &&
+    isFiniteNumber(value.x) &&
+    isFiniteNumber(value.y) &&
+    isFiniteNumber(value.z)
+  ) {
+    return [value.x, value.y, value.z];
+  }
+  return null;
+}
+
 function polygonArea(value: unknown): number | null | undefined {
   if (value === undefined) {
     return undefined;
@@ -34,14 +49,11 @@ function polygonArea(value: unknown): number | null | undefined {
 
   const corners: number[][] = [];
   for (const corner of value) {
-    if (
-      !Array.isArray(corner) ||
-      corner.length !== 3 ||
-      !corner.every(isFiniteNumber)
-    ) {
+    const point = asVec3(corner);
+    if (point === null) {
       return null;
     }
-    corners.push(corner);
+    corners.push(point);
   }
   if (corners.length < 3) {
     return undefined;
@@ -68,15 +80,18 @@ function polygonArea(value: unknown): number | null | undefined {
 }
 
 function dimensionsArea(value: unknown): number | null {
+  const extents = Array.isArray(value)
+    ? value
+    : asVec3(value);
   if (
-    !Array.isArray(value) ||
-    value.length < 2 ||
-    !value.every(isFiniteNumber) ||
-    value.some((extent) => extent < 0)
+    extents === null ||
+    extents.length < 2 ||
+    !extents.every(isFiniteNumber) ||
+    extents.some((extent) => extent < 0)
   ) {
     return null;
   }
-  const positiveExtents = value.filter((extent) => extent > 0);
+  const positiveExtents = extents.filter((extent) => extent > 0);
   if (positiveExtents.length !== 2) {
     return null;
   }
