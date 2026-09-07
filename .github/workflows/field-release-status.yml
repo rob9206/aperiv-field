@@ -1,0 +1,39 @@
+name: Read Field test release status
+
+on:
+  push:
+    branches: [codex/field-release-status]
+    paths: [.github/workflows/field-release-status.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.23.1
+          cache: npm
+      - run: npm ci --include=dev
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: 21.2.0
+          packager: npm
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Read the latest test build and submission
+        run: |
+          eas build:list --platform ios --channel field-submission-test --limit 1 --json --non-interactive > "$RUNNER_TEMP/field-latest.json"
+          node <<'NODE'
+          const fs = require('node:fs');
+          const builds = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/field-latest.json`, 'utf8'));
+          if (builds.length !== 1) throw new Error('Expected one Field test build');
+          const b = builds[0];
+          const report = { id: b.id, status: b.status, appBuildVersion: b.appBuildVersion, channel: b.channel, runtimeVersion: b.runtimeVersion, buildProfile: b.buildProfile, gitCommitHash: b.gitCommitHash, queuePosition: b.queuePosition, estimatedWaitTimeLeftSeconds: b.estimatedWaitTimeLeftSeconds, error: b.error, submissions: b.submissions?.map(s => ({ id: s.id, status: s.status, error: s.error })) };
+          console.log(JSON.stringify(report, null, 2));
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, 'Read-only build and submission status:\n\n```json\n' + JSON.stringify(report, null, 2) + '\n```\n');
+          NODE
