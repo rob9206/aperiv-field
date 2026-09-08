@@ -13,10 +13,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useTheme } from '@/hooks/use-theme';
-import { loadDraftStore } from '@/lib/draft-store';
+import { loadDraftStore, mutateDraftById } from '@/lib/draft-store';
+import { isJobSent, matchJobDestination } from '@/lib/crew-workflow';
 import { FieldSubmissionError } from '@/lib/field-upload';
 import {
   fieldSubmissionEnabled,
+  findCompletedFieldSubmission,
   loadFieldRoster,
   sendFieldDraft,
 } from '@/lib/field-submission-runtime';
@@ -96,6 +98,8 @@ export default function SubmitScreen() {
 
 function SubmissionForm({ draftId }: { draftId: string }) {
   const { t } = useLocale();
+  const { user } = useAuth();
+  const userId = user?.id;
   const theme = useTheme();
   const [draft, setDraft] = useState<ManualWalkthroughDraft | null>(null);
   const [roster, setRoster] = useState<{
@@ -109,6 +113,7 @@ function SubmissionForm({ draftId }: { draftId: string }) {
   const [sendError, setSendError] = useState<FieldSubmissionError | null>(null);
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
+  const [receiptFailed, setReceiptFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const lock = useRef(false);
   const scroll = useRef<ScrollView>(null);
@@ -120,12 +125,48 @@ function SubmissionForm({ draftId }: { draftId: string }) {
   useEffect(() => {
     let cancelled = false;
     void Promise.all([loadDraftStore(), loadFieldRoster()])
-      .then(([store, next]) => {
+      .then(async ([store, next]) => {
         if (cancelled) return;
-        const saved = store.drafts[draftId];
+        let saved = store.drafts[draftId];
         if (!saved?.completedAt) throw new Error('Save the job first');
+        // Older builds did not keep receipts. Recover only this user's exact
+        // saved revision; a network error leaves the local job usable.
+        if (userId && !isJobSent(saved, userId)) {
+          const remote = await findCompletedFieldSubmission(saved, userId).catch(() => null);
+          if (cancelled) return;
+          if (remote) {
+            const receipt = {
+              captureId: remote.id, userId: userId, unitId: remote.unit_id,
+              completedAt: saved.completedAt, sentAt: new Date().toISOString(),
+            };
+            saved = { ...saved, submissionReceipt: receipt };
+            try {
+              const recovered = await mutateDraftById(saved.id, current =>
+                current.completedAt === receipt.completedAt
+                  ? { draft: { ...current, submissionReceipt: receipt }, value: undefined }
+                  : null);
+              if (!cancelled) setReceiptFailed(!recovered);
+            } catch {
+              if (!cancelled) setReceiptFailed(true);
+            }
+          }
+        }
+        if (cancelled) return;
         setDraft(saved);
         setRoster(next);
+        const alreadySent = isJobSent(saved, userId);
+        const sentUnit = alreadySent
+          ? next.units.find(item => item.id === saved.submissionReceipt?.unitId)
+          : null;
+        const destination = sentUnit
+          ? { propertyId: sentUnit.property_id, unitId: sentUnit.id }
+          : matchJobDestination(saved, next.properties, next.units);
+        if (destination) {
+          setPropertyId(destination.propertyId);
+          setUnitId(destination.unitId);
+          setChoosingProperty(false);
+        }
+        setSent(alreadySent);
         setFailed(false);
       })
       .catch(() => {
@@ -134,7 +175,7 @@ function SubmissionForm({ draftId }: { draftId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [draftId, attempt]);
+  }, [draftId, attempt, userId]);
 
   const send = async () => {
     if (!draft || !unitId || lock.current) return;
@@ -147,8 +188,25 @@ function SubmissionForm({ draftId }: { draftId: string }) {
       const latest = (await loadDraftStore()).drafts[draft.id];
       if (!latest?.completedAt || latest.completedAt !== draft.completedAt)
         throw new FieldSubmissionError('job_changed');
-      await sendFieldDraft(latest, unitId);
+      const captureId = await sendFieldDraft(latest, unitId);
       setSent(true);
+      // A local receipt failure must never turn an acknowledged upload into
+      // a "send failed" message. Retrying the same revision is idempotent.
+      try {
+        const committed = await mutateDraftById(latest.id, current => {
+          if (current.completedAt !== latest.completedAt || !userId) return null;
+          return {
+            draft: { ...current, submissionReceipt: {
+              captureId, userId: userId, unitId,
+              completedAt: latest.completedAt!, sentAt: new Date().toISOString(),
+            } },
+            value: undefined,
+          };
+        });
+        setReceiptFailed(!committed);
+      } catch {
+        setReceiptFailed(true);
+      }
     } catch (error) {
       setFailed(true);
       setSendError(error instanceof FieldSubmissionError ? error : null);
@@ -196,6 +254,9 @@ function SubmissionForm({ draftId }: { draftId: string }) {
               <ThemedText themeColor="textSecondary" style={styles.centered}>
                 {t('sentToManager')}
               </ThemedText>
+              {receiptFailed ? (
+                <ThemedText style={{ color: theme.danger }}>{t('sentReceiptFailed')}</ThemedText>
+              ) : null}
             </View>
           ) : (
             <>
@@ -234,9 +295,10 @@ function SubmissionForm({ draftId }: { draftId: string }) {
                   {sendError?.roomName ? ` (${sendError.roomName})` : ''}
                 </ThemedText>
               )}
-              {failed && draft && (
+              {draft && (
                 <SubmitButton
-                  label={t('openSavedJob')}
+                  label={t('viewJob')}
+                  disabled={busy}
                   onPress={() =>
                     router.replace({
                       pathname: '/walkthrough',
@@ -306,7 +368,12 @@ function SubmissionForm({ draftId }: { draftId: string }) {
                   {!!propertyId && !choosingProperty && (
                     <View style={styles.section}>
                       <ThemedText type="heading">{t('chooseUnit')}</ThemedText>
-                      <View style={styles.units}>
+                      {unit ? (
+                        <View style={[styles.card, { borderColor: theme.accent }]}>
+                          <ThemedText type="heading">{unit.unit_number}</ThemedText>
+                          <SubmitButton label={t('changeUnit')} onPress={() => setUnitId('')} disabled={busy} />
+                        </View>
+                      ) : <View style={styles.units}>
                         {availableUnits.map((unit) => (
                           <View key={unit.id} style={styles.unit}>
                             <SubmitButton
@@ -317,7 +384,7 @@ function SubmissionForm({ draftId }: { draftId: string }) {
                             />
                           </View>
                         ))}
-                      </View>
+                      </View>}
                     </View>
                   )}
                   {(roster.units.length === 0 ||
@@ -336,11 +403,14 @@ function SubmissionForm({ draftId }: { draftId: string }) {
           ]}
         >
           {sent ? (
+            <View style={styles.section}>
+            <SubmitButton label={t('viewJob')} onPress={() => router.replace({ pathname: '/walkthrough', params: { mode: 'resume', id: draftId } })} />
             <SubmitButton
               label={t('myJobs')}
               onPress={() => router.replace('/')}
               primary
             />
+            </View>
           ) : (
             <>
               <ThemedText

@@ -1,3 +1,5 @@
+import { isJobSent } from '@/lib/crew-workflow';
+import { useAuth } from '@/providers/auth-provider';
 import { fieldSubmissionEnabled } from '@/lib/field-submission-runtime';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
@@ -88,6 +90,7 @@ function GuideButton({
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [
@@ -126,6 +129,9 @@ export function ManualWalkthrough({
 }: ManualWalkthroughProps) {
   const theme = useTheme();
   const { t, locale } = useLocale();
+  const { user } = useAuth();
+  const scroll = useRef<ScrollView>(null);
+  const photoInFlight = useRef(false);
   const params = useLocalSearchParams<{ mode?: string; id?: string }>();
 
   const [screenStep, setScreenStep] = useState<ScreenStep>('checkin');
@@ -145,6 +151,7 @@ export function ManualWalkthrough({
   const [recordedSqft, setRecordedSqft] = useState('');
   const [showRecordedArea, setShowRecordedArea] = useState(false);
   const [showMore, setShowMore] = useState(false);
+  const [showRoomOptions, setShowRoomOptions] = useState(false);
 
   const draft = store?.activeDraftId
     ? (store.drafts[store.activeDraftId] ?? null)
@@ -206,21 +213,10 @@ export function ManualWalkthrough({
           next = selected?.store ?? (await loadDraftStore());
           nextStep = selected?.value ?? 'checkin';
         } else if (params.mode === 'new') {
-          const selected = await mutateDraftStore<ScreenStep>((current) => {
-            const activeId = current.activeDraftId;
-            const active = activeId ? current.drafts[activeId] : null;
-            const inProgress =
-              !!active &&
-              !active.completedAt &&
-              (active.guidePhase != null ||
-                active.rooms.some(
-                  (item) => item.scanned || item.photos.length > 0,
-                ));
-            return {
-              store: inProgress ? current : { ...current, activeDraftId: null },
-              value: inProgress ? 'roomGuide' : 'checkin',
-            };
-          });
+          const selected = await mutateDraftStore<ScreenStep>((current) => ({
+            store: { ...current, activeDraftId: null },
+            value: 'checkin',
+          }));
           next = selected!.store;
           nextStep = selected!.value;
         } else {
@@ -263,7 +259,16 @@ export function ManualWalkthrough({
     storeRef.current = store;
   }, [store]);
 
+  useEffect(() => {
+    scroll.current?.scrollTo({ y: 0, animated: false });
+  }, [room?.id, screenStep]);
+
   const applyCommittedStore = (next: DraftStore) => {
+    const active = next.activeDraftId ? next.drafts[next.activeDraftId] : null;
+    if (active?.rooms[active.guideRoomIndex ?? 0]?.id !== room?.id) {
+      setShowRoomOptions(false);
+      setPhotoError(null);
+    }
     storeRef.current = next;
     setStore(next);
   };
@@ -361,9 +366,10 @@ export function ManualWalkthrough({
     const draftId = current?.activeDraftId;
     const active = draftId ? current?.drafts[draftId] : null;
     const roomId = active?.rooms[active.guideRoomIndex ?? 0]?.id;
-    if (!draftId || !roomId) {
+    if (!draftId || !roomId || photoInFlight.current) {
       return;
     }
+    photoInFlight.current = true;
     setPhotoError(null);
     try {
       if (source === 'camera') {
@@ -399,6 +405,8 @@ export function ManualWalkthrough({
       applyCommittedStore(committed.store);
     } catch {
       setPhotoError(t('photoFailed'));
+    } finally {
+      photoInFlight.current = false;
     }
   };
 
@@ -449,7 +457,7 @@ export function ManualWalkthrough({
       });
       return;
     }
-    setScreenStep('checkin');
+    router.replace('/');
   };
 
   const goNextRoomOrFinish = () => {
@@ -606,7 +614,7 @@ export function ManualWalkthrough({
     }
   };
 
-  const saveJob = async (requestedStatus: VerificationStatus) => {
+  const saveJob = async (requestedStatus: VerificationStatus, reviewAndSend = false) => {
     if (!draft || isSaving) {
       return;
     }
@@ -625,6 +633,7 @@ export function ManualWalkthrough({
       applyCommittedStore(committed.store);
       setSavedMessage(t('savedOnDevice'));
       setScreenStep('done');
+      if (reviewAndSend) router.push({ pathname: '/submit', params: { draftId: draft.id } });
     } catch {
       setHydrateError(t('saveFailed'));
     } finally {
@@ -635,6 +644,11 @@ export function ManualWalkthrough({
 
   const canSaveVerified =
     !!draft && lidarAvailable && !manualUnverified && draftCanBeVerified(draft);
+
+  const areaVerified = draft?.completedAt ? draft.verificationStatus === 'verified' : canSaveVerified;
+  const canSend = fieldSubmissionEnabled && Platform.OS !== 'web';
+  const jobSent = !!draft && isJobSent(draft, user?.id);
+  const advanceBlock = room ? canAdvanceRoom(room, lidarRequired) : 'ok';
 
   const showGuideBack =
     screenStep === 'roomGuide' ||
@@ -664,6 +678,7 @@ export function ManualWalkthrough({
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
+        ref={scroll}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -677,7 +692,7 @@ export function ManualWalkthrough({
               style={[styles.backHit, isSaving && styles.buttonDisabled]}
             >
               <ThemedText type="smallBold" style={{ color: theme.accentText }}>
-                ‹ {t('back')}
+                ‹ {t(screenStep === 'roomGuide' && roomIndex === 0 ? 'myJobs' : 'back')}
               </ThemedText>
             </Pressable>
           </View>
@@ -695,10 +710,10 @@ export function ManualWalkthrough({
             style={[styles.card, { borderColor: theme.border }]}
           >
             <ThemedText type="heading" style={styles.prompt}>
-              {t('checkIn')}
+              {t('startJob')}
             </ThemedText>
             <ThemedText type="default" themeColor="textSecondary">
-              {!lidarAvailable ? t('noLidarDevice') : t('scanRequired')}
+              {t('startJobHint')}
             </ThemedText>
             <View style={styles.fieldGroup}>
               <ThemedText type="smallBold" themeColor="textSecondary">
@@ -750,6 +765,9 @@ export function ManualWalkthrough({
                 />
               </View>
             ) : null}
+            {(!propertyName.trim() || !unitNumber.trim()) && (
+              <ThemedText type="small" themeColor="textSecondary">{t('jobDetailsHint')}</ThemedText>
+            )}
             <GuideButton
               label={storeReady ? t('startJob') : t('loading')}
               onPress={startJob}
@@ -779,6 +797,62 @@ export function ManualWalkthrough({
             <ThemedText type="heading" style={styles.roomTitle}>
               {room.name || t('rooms')}
             </ThemedText>
+
+            <View style={styles.section}>
+              <View style={styles.photoHeader}>
+                <ThemedText type="smallBold">{t('photosCount')}</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {photoHint}
+                </ThemedText>
+              </View>
+              {photoError ? (
+                <ThemedText type="default" style={{ color: theme.danger }}>
+                  {photoError}
+                </ThemedText>
+              ) : null}
+              <GuideButton label={t('takePhoto')} onPress={() => { void addPhoto('camera'); }}
+                accent={theme.accentText} onAccent={theme.onAccent} secondary border={theme.accent} />
+              <View style={styles.photoRow}>
+                {room.photos.map((photo) => (
+                  <View key={photo.id} style={styles.photoWrap}>
+                    <Image
+                      source={{ uri: photo.uri }}
+                      style={styles.photoThumb}
+                    />
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={t('removePhoto')}
+                      hitSlop={8}
+                      onPress={() => {
+                        void removePhoto(photo.id);
+                      }}
+                      style={[
+                        styles.photoRemove,
+                        { backgroundColor: theme.dangerFill },
+                      ]}
+                    >
+                      <ThemedText
+                        type="smallBold"
+                        style={{ color: theme.onDangerFill }}
+                      >
+                        ×
+                      </ThemedText>
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  void addPhoto('library');
+                }}
+                style={styles.linkButton}
+              >
+                <ThemedText type="small" themeColor="textSecondary">
+                  {t('addFromLibrary')}
+                </ThemedText>
+              </Pressable>
+            </View>
 
             {manualUnverified ? (
               <ThemedText type="default" style={{ color: theme.warning }}>
@@ -827,6 +901,8 @@ export function ManualWalkthrough({
                   <>
                     <GuideButton
                       label={t('scanRoom')}
+                      secondary
+                      border={theme.border}
                       onPress={() =>
                         onOpenLidar?.({ draftId: draft.id, roomId: room.id })
                       }
@@ -873,15 +949,12 @@ export function ManualWalkthrough({
                       : condition === 'watch'
                         ? t('conditionWatch')
                         : t('conditionIssue');
-                  const border =
-                    condition === 'good'
-                      ? theme.accent
-                      : condition === 'watch'
-                        ? theme.warning
-                        : theme.danger;
+                  const border = theme.accent;
                   return (
                     <Pressable
                       key={condition}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: selected }}
                       onPress={() => setCondition(condition)}
                       style={({ pressed }) => [
                         styles.readyChip,
@@ -924,6 +997,8 @@ export function ManualWalkthrough({
                     return (
                       <Pressable
                         key={part}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: on }}
                         onPress={() => togglePart(part)}
                         style={({ pressed }) => [
                           styles.partChip,
@@ -963,92 +1038,23 @@ export function ManualWalkthrough({
               </View>
             ) : null}
 
-            <View style={styles.section}>
-              <View style={styles.photoHeader}>
-                <ThemedText type="smallBold">{t('photosCount')}</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary">
-                  {photoHint}
-                </ThemedText>
-              </View>
-              {photoError ? (
-                <ThemedText type="default" style={{ color: theme.danger }}>
-                  {photoError}
-                </ThemedText>
-              ) : null}
-              <View style={styles.photoRow}>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => {
-                    void addPhoto('camera');
-                  }}
-                  style={[styles.addPhotoTile, { backgroundColor: theme.text }]}
-                >
-                  <ThemedText
-                    type="smallBold"
-                    style={{ color: theme.onAccent }}
-                  >
-                    {t('addPhoto')}
-                  </ThemedText>
-                </Pressable>
-                {room.photos.map((photo) => (
-                  <View key={photo.id} style={styles.photoWrap}>
-                    <Image
-                      source={{ uri: photo.uri }}
-                      style={styles.photoThumb}
-                    />
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={t('removePhoto')}
-                      hitSlop={8}
-                      onPress={() => {
-                        void removePhoto(photo.id);
-                      }}
-                      style={[
-                        styles.photoRemove,
-                        { backgroundColor: theme.dangerFill },
-                      ]}
-                    >
-                      <ThemedText
-                        type="smallBold"
-                        style={{ color: theme.onDangerFill }}
-                      >
-                        ×
-                      </ThemedText>
-                    </Pressable>
-                  </View>
-                ))}
-              </View>
-              <Pressable
-                onPress={() => {
-                  void addPhoto('library');
-                }}
-                style={styles.linkButton}
-              >
-                <ThemedText type="small" themeColor="textSecondary">
-                  {t('addFromLibrary')}
-                </ThemedText>
-              </Pressable>
-            </View>
-
-            <GuideButton
-              label={nextLabel}
-              onPress={goNextRoomOrFinish}
-              accent={theme.accent}
-              onAccent={theme.onAccent}
-            />
-            <GuideButton
-              label={t('skipRoom')}
-              onPress={skipRoom}
-              accent={theme.accentText}
-              onAccent={theme.onAccent}
-              secondary
-              border={theme.border}
-            />
-            <Pressable onPress={addRoom} style={styles.linkButton}>
-              <ThemedText type="small" themeColor="textSecondary">
-                {t('addRoom')}
+            <Pressable accessibilityRole="button" accessibilityState={{ expanded: showRoomOptions }}
+              onPress={() => setShowRoomOptions(value => !value)} style={styles.linkButton}>
+              <ThemedText type="smallBold" themeColor="textSecondary">
+                {t('roomOptions')} {showRoomOptions ? '−' : '+'}
               </ThemedText>
             </Pressable>
+            {showRoomOptions ? (
+              <View style={styles.section}>
+                <ThemedText type="smallBold">{t('roomName')}</ThemedText>
+                <TextInput accessibilityLabel={t('roomName')} value={room.name}
+                  onChangeText={name => patchRoom({ name })} style={[styles.input, inputStyle]} />
+                <GuideButton label={t('addRoom')} onPress={addRoom} secondary
+                  accent={theme.accentText} onAccent={theme.onAccent} border={theme.border} />
+                <GuideButton label={t('skipRoom')} onPress={skipRoom} secondary
+                  accent={theme.accentText} onAccent={theme.onAccent} border={theme.border} />
+              </View>
+            ) : null}
           </ThemedView>
         )}
 
@@ -1057,81 +1063,18 @@ export function ManualWalkthrough({
             type="backgroundElement"
             style={[styles.card, { borderColor: theme.border }]}
           >
-            <View
-              style={[
-                styles.statusBanner,
-                {
-                  backgroundColor:
-                    draft.verificationStatus === 'verified'
-                      ? theme.successFill
-                      : theme.warningFill,
-                },
-              ]}
-            >
-              <ThemedText
-                type="heading"
-                style={{
-                  color:
-                    draft.verificationStatus === 'verified'
-                      ? theme.onSuccessFill
-                      : theme.onWarningFill,
-                }}
-              >
-                {draft.verificationStatus === 'verified'
-                  ? t('jobVerified')
-                  : t('jobUnverified')}
-              </ThemedText>
-            </View>
+            <ThemedText type="heading" style={styles.prompt}>
+              {t(jobSent ? 'jobSent' : draft.completedAt ? 'jobReadyToSend' : 'reviewJob')}
+            </ThemedText>
+            <ThemedText type="smallBold" style={{ color: areaVerified ? theme.accentText : theme.warning }}>
+              {t(areaVerified ? 'areaVerified' : 'areaUnverified')}
+            </ThemedText>
             <ThemedText type="heading" style={styles.doneUnit}>
               {draft.property}
             </ThemedText>
             <ThemedText type="default" themeColor="textSecondary">
               {t('unit')} {draft.unit}
             </ThemedText>
-            {measured > 0 ||
-            recorded !== null ||
-            previousUnverifiedMeasured > 0 ? (
-              <View
-                style={[
-                  styles.measureBox,
-                  { backgroundColor: theme.backgroundSelected },
-                ]}
-              >
-                <View style={styles.measureCols}>
-                  <View style={styles.measureCol}>
-                    <ThemedText type="small" themeColor="textSecondary">
-                      {t('recordedSqftLabel')}
-                    </ThemedText>
-                    <ThemedText type="heading" style={styles.measureLine}>
-                      {recorded !== null ? Math.round(recorded) : '—'}
-                    </ThemedText>
-                  </View>
-                  <View style={styles.measureCol}>
-                    <ThemedText
-                      type="small"
-                      style={{ color: theme.accentText }}
-                    >
-                      {t('measuredSqftLabel')}
-                    </ThemedText>
-                    <ThemedText type="heading" style={styles.measureLine}>
-                      {measured > 0 ? Math.round(measured) : '—'}
-                    </ThemedText>
-                  </View>
-                </View>
-                {measured === 0 ? (
-                  <ThemedText type="default" themeColor="textSecondary">
-                    {t('noVerifiedTotal')}
-                  </ThemedText>
-                ) : null}
-                {previousUnverifiedMeasured > 0 ? (
-                  <ThemedText type="smallBold" style={{ color: theme.warning }}>
-                    {t('previousUnverifiedMeasurement')}:{' '}
-                    {Math.round(previousUnverifiedMeasured)}{' '}
-                    {t('squareFeetShort')}
-                  </ThemedText>
-                ) : null}
-              </View>
-            ) : null}
             {savedMessage || draft.completedAt ? (
               <ThemedText type="default" themeColor="textSecondary">
                 {savedMessage ?? t('savedOnDevice')}
@@ -1142,12 +1085,10 @@ export function ManualWalkthrough({
                 label={
                   isSaving
                     ? t('saving')
-                    : canSaveVerified
-                      ? t('saveVerified')
-                      : t('saveUnverified')
+                    : canSend ? t('reviewAndSend') : t('saveJob')
                 }
                 onPress={() => {
-                  void saveJob(canSaveVerified ? 'verified' : 'unverified');
+                  void saveJob(canSaveVerified ? 'verified' : 'unverified', canSend);
                 }}
                 disabled={isSaving}
                 accent={theme.accent}
@@ -1155,7 +1096,7 @@ export function ManualWalkthrough({
               />
             ) : (
               <>
-                {fieldSubmissionEnabled && Platform.OS !== 'web' ? (
+                {canSend && !jobSent ? (
                   <GuideButton
                     label={t('sendToManager')}
                     onPress={() =>
@@ -1178,8 +1119,17 @@ export function ManualWalkthrough({
                 />
               </>
             )}
-            {draft.completedAt ||
-            (onShareScan && draft.rooms.some((item) => item.scanArtifact)) ? (
+            {!draft.completedAt && canSend ? (
+              <Pressable accessibilityRole="button" disabled={isSaving} style={styles.linkButton}
+                onPress={() => { void saveJob(canSaveVerified ? 'verified' : 'unverified'); }}>
+                <ThemedText type="smallBold" themeColor="accentText">{t('saveForLater')}</ThemedText>
+              </Pressable>
+            ) : null}
+            <Pressable accessibilityRole="button" disabled={isSaving} style={styles.linkButton}
+              onPress={() => setScreenStep('roomGuide')}>
+              <ThemedText type="smallBold" themeColor="accentText">{t('editRooms')}</ThemedText>
+            </Pressable>
+            {draft ? (
               <Pressable
                 accessibilityRole="button"
                 accessibilityState={{ expanded: showMore }}
@@ -1187,12 +1137,57 @@ export function ManualWalkthrough({
                 style={styles.linkButton}
               >
                 <ThemedText type="smallBold" themeColor="textSecondary">
-                  {t('moreOptions')} {showMore ? '−' : '+'}
+                  {t('jobDetails')} {showMore ? '−' : '+'}
                 </ThemedText>
               </Pressable>
             ) : null}
             {showMore ? (
               <View style={styles.section}>
+                {measured > 0 ||
+                recorded !== null ||
+                previousUnverifiedMeasured > 0 ? (
+                  <View
+                    style={[
+                      styles.measureBox,
+                      { backgroundColor: theme.backgroundSelected },
+                    ]}
+                  >
+                    <View style={styles.measureCols}>
+                      <View style={styles.measureCol}>
+                        <ThemedText type="small" themeColor="textSecondary">
+                          {t('recordedSqftLabel')}
+                        </ThemedText>
+                        <ThemedText type="heading" style={styles.measureLine}>
+                          {recorded !== null ? Math.round(recorded) : '—'}
+                        </ThemedText>
+                      </View>
+                      <View style={styles.measureCol}>
+                        <ThemedText
+                          type="small"
+                          style={{ color: theme.accentText }}
+                        >
+                          {t('measuredSqftLabel')}
+                        </ThemedText>
+                        <ThemedText type="heading" style={styles.measureLine}>
+                          {measured > 0 ? Math.round(measured) : '—'}
+                        </ThemedText>
+                      </View>
+                    </View>
+                    {measured === 0 ? (
+                      <ThemedText type="default" themeColor="textSecondary">
+                        {t('noVerifiedTotal')}
+                      </ThemedText>
+                    ) : null}
+                    {previousUnverifiedMeasured > 0 ? (
+                      <ThemedText type="smallBold" style={{ color: theme.warning }}>
+                        {t('previousUnverifiedMeasurement')}:{' '}
+                        {Math.round(previousUnverifiedMeasured)}{' '}
+                        {t('squareFeetShort')}
+                      </ThemedText>
+                    ) : null}
+                  </View>
+                ) : null}
+
                 {onShareScan &&
                 draft.rooms.some((item) => item.scanArtifact != null) ? (
                   <View style={styles.section}>
@@ -1257,6 +1252,21 @@ export function ManualWalkthrough({
           </ThemedView>
         )}
       </ScrollView>
+      {screenStep === 'roomGuide' && draft && room ? (
+        <View style={[styles.footer, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+          <ThemedText type="small" themeColor="textSecondary" style={styles.centerHint}>
+            {t(advanceBlock === 'photo' ? 'photoRequired' : advanceBlock === 'scan' ? 'scanRequired' : 'roomSavedHint')}
+          </ThemedText>
+          <GuideButton
+            label={advanceBlock === 'photo' ? t('takePhoto') : advanceBlock === 'scan' ? t('scanRoom') : nextLabel}
+            onPress={() => {
+              if (advanceBlock === 'photo') { void addPhoto('camera'); }
+              else if (advanceBlock === 'scan') { onOpenLidar?.({ draftId: draft.id, roomId: room.id }); }
+              else goNextRoomOrFinish();
+            }}
+            accent={theme.accent} onAccent={theme.onAccent} />
+        </View>
+      ) : null}
     </KeyboardAvoidingView>
   );
 }
@@ -1265,8 +1275,13 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
+  footer: {
+    padding: Spacing.three,
+    gap: Spacing.two,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
   scrollContent: {
-    padding: Spacing.four,
+    padding: Spacing.three,
     gap: Spacing.three,
     paddingBottom: Spacing.six,
   },
@@ -1283,7 +1298,7 @@ const styles = StyleSheet.create({
   },
   card: {
     gap: Spacing.four,
-    padding: Spacing.four,
+    padding: Spacing.three,
     borderRadius: Spacing.three,
     borderWidth: StyleSheet.hairlineWidth,
   },
@@ -1334,11 +1349,15 @@ const styles = StyleSheet.create({
   },
   readyRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: Spacing.two,
   },
   readyChip: {
-    flex: 1,
-    minHeight: 72,
+    flexGrow: 1,
+    flexBasis: '30%',
+    minWidth: 86,
+    minHeight: 56,
+    paddingVertical: 10,
     borderRadius: Spacing.three,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1388,9 +1407,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 4,
     right: 4,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1416,13 +1435,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: Spacing.two,
   },
-  addPhotoTile: {
-    width: 82,
-    height: 82,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   photoThumb: {
     width: 82,
     height: 82,
@@ -1440,12 +1452,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.three,
-  },
-  statusBanner: {
-    borderRadius: Spacing.three,
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    alignItems: 'center',
   },
   doneUnit: {
     fontSize: 24,

@@ -94,6 +94,14 @@ export type ManualWalkthroughDraft = {
   guidePhase?: GuidePhase;
   measuredSqftFromScan?: number;
   verificationStatus?: VerificationStatus;
+  /** Local acknowledgement for one submitted revision; never an approval. */
+  submissionReceipt?: {
+    captureId: string;
+    userId: string;
+    unitId: string;
+    completedAt: string;
+    sentAt: string;
+  };
 };
 
 export type DraftStore = {
