@@ -1,6 +1,6 @@
 import { Link, router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { JobList } from '@/components/job-list';
@@ -9,6 +9,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MinTouchTarget, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { fieldSubmissionEnabled } from '@/lib/field-submission-runtime';
 import { captureFileLifecycle } from '@/lib/capture-files-runtime';
 import { loadDraftStore, mutateDraftStore } from '@/lib/draft-store';
 import { type DraftStore } from '@/lib/walkthrough-draft';
@@ -70,6 +71,10 @@ export default function HomeScreen() {
       }
       setHasSaveError(false);
       setStore(committed.store);
+      if (committed.store.drafts[id]?.completedAt && fieldSubmissionEnabled && Platform.OS !== 'web') {
+        router.push({ pathname: '/submit', params: { draftId: id } });
+        return;
+      }
       router.push({
         pathname: '/walkthrough',
         params: { mode: 'resume', id },
@@ -136,6 +141,7 @@ export default function HomeScreen() {
               {store ? (
                 <JobList
                   store={store}
+                  userId={user?.id}
                   onNewJob={onNewJob}
                   onOpenJob={(id) => {
                     void onOpenJob(id);

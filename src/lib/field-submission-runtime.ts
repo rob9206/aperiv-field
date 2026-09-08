@@ -4,10 +4,24 @@ import type { Json } from './database.types';
 import type { ManualWalkthroughDraft } from './walkthrough-draft';
 import { FieldSubmissionError, uploadFieldAsset } from './field-upload';
 import {
+  submissionKey,
   submitFieldDraft,
   type SubmissionPayload,
   type SubmissionPorts,
 } from './field-submission';
+
+/** Recover an acknowledgement after an older app version or a lost response. */
+export async function findCompletedFieldSubmission(draft: ManualWalkthroughDraft, userId: string) {
+  if (!supabase || !fieldSubmissionEnabled || !draft.completedAt) return null;
+  const { data, error } = await supabase.from('walkthroughs')
+    .select('id,unit_id')
+    .eq('captured_by', userId)
+    .eq('source_draft_id', submissionKey(draft))
+    .eq('status', 'complete')
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
 
 export const fieldSubmissionEnabled =
   process.env.EXPO_PUBLIC_FIELD_SUBMISSION_ENABLED === 'true';

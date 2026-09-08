@@ -1,8 +1,28 @@
 export type AppLocale = 'en' | 'es';
 
 const en = {
+  previousRoom: 'Previous room',
+  changeDestination: 'Change destination',
+  viewJob: 'View job',
+  changeUnit: 'Change unit',
+  jobSent: 'Sent',
+  jobReadyToSend: 'Ready to send',
+  sentJobs: 'Sent jobs',
+  sentAwaitingReview: 'Sent to manager. Tap to view.',
+  reviewJob: 'Review job',
+  reviewAndSend: 'Review & send',
+  saveForLater: 'Save and send later',
+  roomOptions: 'Room options',
+  jobDetails: 'Measurements & files',
+  startJobHint: 'Name the job, then take photos in each room.',
+  jobDetailsHint: 'Enter the property and unit to start.',
+  roomSavedHint: 'Photos saved. Continue when this room is ready.',
+  areaVerified: 'Square footage verified',
+  areaUnverified: 'Square footage unverified · manager can still review',
+  sentReceiptFailed: 'The manager received this job, but this phone could not remember its sent status.',
+
   sendToManager: 'Send to manager',
-  reviewDestination: 'Where should this go?',
+  reviewDestination: 'Ready to send?',
   savedJob: 'Saved job',
   changeProperty: 'Change property',
   sendSelectUnitHint: 'Choose a property and unit to enable Send.',
@@ -10,7 +30,7 @@ const en = {
   sentTitle: 'Job sent',
   sendingShort: 'Sending…',
   sendKeepsCopy:
-    'Choose the property and unit for this saved job. Your copy stays on this phone.',
+    'Confirm the property and unit below. Your copy stays on this phone.',
   sentToManager: 'Sent to manager. Your saved job is still on this phone.',
   sendFailed:
     'Could not send this job. Your saved copy is safe. Check the unit and connection, then retry.',
@@ -132,7 +152,7 @@ const en = {
   no: 'No',
   nextRoom: 'Next room',
   nextRoomNamed: 'Next:',
-  finishJob: 'Finish',
+  finishJob: 'Review job',
   photoRequired: 'Take at least one photo to continue.',
   language: 'Language',
   noJobsYet: 'No jobs yet. Tap New job to start.',
@@ -184,8 +204,28 @@ const en = {
 } as const;
 
 const es: { [K in keyof typeof en]: string } = {
+  previousRoom: 'Habitación anterior',
+  changeDestination: 'Cambiar destino',
+  viewJob: 'Ver trabajo',
+  changeUnit: 'Cambiar unidad',
+  jobSent: 'Enviado',
+  jobReadyToSend: 'Listo para enviar',
+  sentJobs: 'Trabajos enviados',
+  sentAwaitingReview: 'Enviado al administrador. Toca para ver.',
+  reviewJob: 'Revisar trabajo',
+  reviewAndSend: 'Revisar y enviar',
+  saveForLater: 'Guardar y enviar después',
+  roomOptions: 'Opciones de habitación',
+  jobDetails: 'Medidas y archivos',
+  startJobHint: 'Nombra el trabajo y toma fotos en cada habitación.',
+  jobDetailsHint: 'Escribe la propiedad y la unidad para empezar.',
+  roomSavedHint: 'Fotos guardadas. Continúa cuando termines esta habitación.',
+  areaVerified: 'Superficie verificada',
+  areaUnverified: 'Superficie sin verificar · el administrador puede revisarla',
+  sentReceiptFailed: 'El administrador recibió el trabajo, pero este teléfono no pudo guardar el estado del envío.',
+
   sendToManager: 'Enviar al administrador',
-  reviewDestination: '¿A dónde lo enviamos?',
+  reviewDestination: '¿Listo para enviar?',
   savedJob: 'Trabajo guardado',
   changeProperty: 'Cambiar propiedad',
   sendSelectUnitHint: 'Elige una propiedad y unidad para activar Enviar.',
@@ -193,7 +233,7 @@ const es: { [K in keyof typeof en]: string } = {
   sentTitle: 'Trabajo enviado',
   sendingShort: 'Enviando…',
   sendKeepsCopy:
-    'Elige la propiedad y unidad de este trabajo guardado. Tu copia permanece en este teléfono.',
+    'Confirma la propiedad y la unidad. Tu copia permanece en este teléfono.',
   sentToManager:
     'Enviado al administrador. Tu trabajo sigue guardado en este teléfono.',
   sendFailed:
@@ -318,7 +358,7 @@ const es: { [K in keyof typeof en]: string } = {
   no: 'No',
   nextRoom: 'Siguiente habitación',
   nextRoomNamed: 'Siguiente:',
-  finishJob: 'Terminar',
+  finishJob: 'Revisar trabajo',
   photoRequired: 'Toma al menos una foto para continuar.',
   language: 'Idioma',
   noJobsYet: 'Aún no hay trabajos. Toca Nuevo trabajo.',

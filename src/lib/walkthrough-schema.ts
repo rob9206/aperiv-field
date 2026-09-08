@@ -9,6 +9,7 @@ import type {
   VerificationStatus,
   WalkthroughFinding,
 } from './walkthrough-draft';
+import { normalizeReceipt } from './crew-workflow.ts';
 import {
   MAX_VERIFIED_ROOM_SQFT,
   MIN_VERIFIED_ROOM_SQFT,
@@ -280,6 +281,9 @@ function normalizeDraft(
       ? { measuredSqftFromScan: value.measuredSqftFromScan }
       : {}),
     verificationStatus,
+    ...(normalizeReceipt(value.submissionReceipt)
+      ? { submissionReceipt: normalizeReceipt(value.submissionReceipt) }
+      : {}),
   };
   draft.verificationStatus = draftCanBeVerified(draft)
     ? verificationStatus

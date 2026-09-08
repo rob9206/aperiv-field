@@ -1,3 +1,5 @@
+import { isJobSent } from '@/lib/crew-workflow';
+import { useAuth } from '@/providers/auth-provider';
 import { fieldSubmissionEnabled } from '@/lib/field-submission-runtime';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
@@ -13,6 +15,7 @@ import {
   View,
 } from 'react-native';
 
+import { OverflowButton } from '@/components/overflow-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MinTouchTarget, Spacing } from '@/constants/theme';
@@ -88,6 +91,7 @@ function GuideButton({
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [
@@ -126,6 +130,9 @@ export function ManualWalkthrough({
 }: ManualWalkthroughProps) {
   const theme = useTheme();
   const { t, locale } = useLocale();
+  const { user } = useAuth();
+  const scroll = useRef<ScrollView>(null);
+  const photoInFlight = useRef(false);
   const params = useLocalSearchParams<{ mode?: string; id?: string }>();
 
   const [screenStep, setScreenStep] = useState<ScreenStep>('checkin');
@@ -145,6 +152,7 @@ export function ManualWalkthrough({
   const [recordedSqft, setRecordedSqft] = useState('');
   const [showRecordedArea, setShowRecordedArea] = useState(false);
   const [showMore, setShowMore] = useState(false);
+  const [showRoomOptions, setShowRoomOptions] = useState(false);
 
   const draft = store?.activeDraftId
     ? (store.drafts[store.activeDraftId] ?? null)
@@ -206,21 +214,10 @@ export function ManualWalkthrough({
           next = selected?.store ?? (await loadDraftStore());
           nextStep = selected?.value ?? 'checkin';
         } else if (params.mode === 'new') {
-          const selected = await mutateDraftStore<ScreenStep>((current) => {
-            const activeId = current.activeDraftId;
-            const active = activeId ? current.drafts[activeId] : null;
-            const inProgress =
-              !!active &&
-              !active.completedAt &&
-              (active.guidePhase != null ||
-                active.rooms.some(
-                  (item) => item.scanned || item.photos.length > 0,
-                ));
-            return {
-              store: inProgress ? current : { ...current, activeDraftId: null },
-              value: inProgress ? 'roomGuide' : 'checkin',
-            };
-          });
+          const selected = await mutateDraftStore<ScreenStep>((current) => ({
+            store: { ...current, activeDraftId: null },
+            value: 'checkin',
+          }));
           next = selected!.store;
           nextStep = selected!.value;
         } else {
@@ -263,7 +260,16 @@ export function ManualWalkthrough({
     storeRef.current = store;
   }, [store]);
 
+  useEffect(() => {
+    scroll.current?.scrollTo({ y: 0, animated: false });
+  }, [room?.id, screenStep]);
+
   const applyCommittedStore = (next: DraftStore) => {
+    const active = next.activeDraftId ? next.drafts[next.activeDraftId] : null;
+    if (active?.rooms[active.guideRoomIndex ?? 0]?.id !== room?.id) {
+      setShowRoomOptions(false);
+      setPhotoError(null);
+    }
     storeRef.current = next;
     setStore(next);
   };
@@ -361,9 +367,10 @@ export function ManualWalkthrough({
     const draftId = current?.activeDraftId;
     const active = draftId ? current?.drafts[draftId] : null;
     const roomId = active?.rooms[active.guideRoomIndex ?? 0]?.id;
-    if (!draftId || !roomId) {
+    if (!draftId || !roomId || photoInFlight.current) {
       return;
     }
+    photoInFlight.current = true;
     setPhotoError(null);
     try {
       if (source === 'camera') {
@@ -399,6 +406,8 @@ export function ManualWalkthrough({
       applyCommittedStore(committed.store);
     } catch {
       setPhotoError(t('photoFailed'));
+    } finally {
+      photoInFlight.current = false;
     }
   };
 
@@ -449,7 +458,7 @@ export function ManualWalkthrough({
       });
       return;
     }
-    setScreenStep('checkin');
+    router.replace('/');
   };
 
   const goNextRoomOrFinish = () => {
@@ -606,11 +615,12 @@ export function ManualWalkthrough({
     }
   };
 
-  const saveJob = async (requestedStatus: VerificationStatus) => {
+  const saveJob = async (requestedStatus: VerificationStatus, reviewAndSend = false) => {
     if (!draft || isSaving) {
       return;
     }
     setIsSaving(true);
+    setShowMore(false);
     onSavingChange?.(true);
     setHydrateError(null);
     setSavedMessage(null);
@@ -625,6 +635,7 @@ export function ManualWalkthrough({
       applyCommittedStore(committed.store);
       setSavedMessage(t('savedOnDevice'));
       setScreenStep('done');
+      if (reviewAndSend) router.push({ pathname: '/submit', params: { draftId: draft.id } });
     } catch {
       setHydrateError(t('saveFailed'));
     } finally {
@@ -636,9 +647,10 @@ export function ManualWalkthrough({
   const canSaveVerified =
     !!draft && lidarAvailable && !manualUnverified && draftCanBeVerified(draft);
 
-  const showGuideBack =
-    screenStep === 'roomGuide' ||
-    (screenStep === 'done' && draft && !draft.completedAt);
+  const areaVerified = draft?.completedAt ? draft.verificationStatus === 'verified' : canSaveVerified;
+  const canSend = fieldSubmissionEnabled && Platform.OS !== 'web';
+  const jobSent = !!draft && isJobSent(draft, user?.id);
+  const advanceBlock = room ? canAdvanceRoom(room, lidarRequired) : 'ok';
 
   const selectedParts = room?.issueParts ?? [];
   const showParts = room != null && room.condition !== 'good';
@@ -664,25 +676,11 @@ export function ManualWalkthrough({
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
+        ref={scroll}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {showGuideBack ? (
-          <View style={styles.topBar}>
-            <Pressable
-              accessibilityRole="button"
-              disabled={isSaving}
-              onPress={goBackStep}
-              style={[styles.backHit, isSaving && styles.buttonDisabled]}
-            >
-              <ThemedText type="smallBold" style={{ color: theme.accentText }}>
-                ‹ {t('back')}
-              </ThemedText>
-            </Pressable>
-          </View>
-        ) : null}
-
         {hydrateError ? (
           <ThemedText type="default" style={{ color: theme.danger }}>
             {hydrateError}
@@ -694,11 +692,12 @@ export function ManualWalkthrough({
             type="backgroundElement"
             style={[styles.card, { borderColor: theme.border }]}
           >
-            <ThemedText type="heading" style={styles.prompt}>
-              {t('checkIn')}
-            </ThemedText>
+            <View style={styles.titleRow}>
+              <ThemedText type="heading" style={[styles.prompt, styles.headerTitle]}>{t('startJob')}</ThemedText>
+              <OverflowButton open={showRecordedArea} onPress={() => setShowRecordedArea(value => !value)} />
+            </View>
             <ThemedText type="default" themeColor="textSecondary">
-              {!lidarAvailable ? t('noLidarDevice') : t('scanRequired')}
+              {t('startJobHint')}
             </ThemedText>
             <View style={styles.fieldGroup}>
               <ThemedText type="smallBold" themeColor="textSecondary">
@@ -726,20 +725,9 @@ export function ManualWalkthrough({
                 onChangeText={setUnitNumber}
               />
             </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{
-                expanded: showRecordedArea,
-              }}
-              onPress={() => setShowRecordedArea((value) => !value)}
-              style={styles.backHit}
-            >
-              <ThemedText type="smallBold" themeColor="accentText">
-                {t('recordedSqftOptional')} {showRecordedArea ? '−' : '+'}
-              </ThemedText>
-            </Pressable>
             {showRecordedArea ? (
               <View style={styles.fieldGroup}>
+                <ThemedText type="smallBold">{t('recordedSqftOptional')}</ThemedText>
                 <TextInput
                   style={[styles.input, inputStyle]}
                   placeholder={t('optional')}
@@ -750,6 +738,9 @@ export function ManualWalkthrough({
                 />
               </View>
             ) : null}
+            {(!propertyName.trim() || !unitNumber.trim()) && (
+              <ThemedText type="small" themeColor="textSecondary">{t('jobDetailsHint')}</ThemedText>
+            )}
             <GuideButton
               label={storeReady ? t('startJob') : t('loading')}
               onPress={startJob}
@@ -776,9 +767,78 @@ export function ManualWalkthrough({
                 {draft.rooms.length}
               </ThemedText>
             </View>
-            <ThemedText type="heading" style={styles.roomTitle}>
-              {room.name || t('rooms')}
-            </ThemedText>
+            <View style={styles.titleRow}>
+              <ThemedText type="heading" style={[styles.roomTitle, styles.headerTitle]}>{room.name || t('rooms')}</ThemedText>
+              <OverflowButton open={showRoomOptions} onPress={() => setShowRoomOptions(value => !value)} label={t('roomOptions')} />
+            </View>
+
+            {showRoomOptions ? (
+              <View style={[styles.section, styles.optionsPanel, { borderColor: theme.border }]}>
+                <GuideButton label={t('takePhoto')} onPress={() => { setShowRoomOptions(false); void addPhoto('camera'); }} secondary
+                  accent={theme.accentText} onAccent={theme.onAccent} border={theme.border} />
+                <GuideButton label={t('addFromLibrary')} onPress={() => { setShowRoomOptions(false); void addPhoto('library'); }} secondary
+                  accent={theme.accentText} onAccent={theme.onAccent} border={theme.border} />
+                {lidarAvailable ? (
+                  <GuideButton label={roomScanSaved ? t('scanAgain') : t('scanRoom')}
+                    onPress={() => { setShowRoomOptions(false); onOpenLidar?.({ draftId: draft.id, roomId: room.id }); }} secondary
+                    accent={theme.accentText} onAccent={theme.onAccent} border={theme.border} />
+                ) : null}
+                <GuideButton label={roomIndex > 0 ? t('previousRoom') : t('myJobs')} onPress={goBackStep} secondary
+                  accent={theme.accentText} onAccent={theme.onAccent} border={theme.border} />
+                <ThemedText type="smallBold">{t('roomName')}</ThemedText>
+                <TextInput accessibilityLabel={t('roomName')} value={room.name}
+                  onChangeText={name => patchRoom({ name })} style={[styles.input, inputStyle]} />
+                <GuideButton label={t('addRoom')} onPress={addRoom} secondary
+                  accent={theme.accentText} onAccent={theme.onAccent} border={theme.border} />
+                <GuideButton label={t('skipRoom')} onPress={skipRoom} secondary
+                  accent={theme.accentText} onAccent={theme.onAccent} border={theme.border} />
+              </View>
+            ) : null}
+            <View style={styles.section}>
+              <View style={styles.photoHeader}>
+                <ThemedText type="smallBold">{t('photosCount')}</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {photoHint}
+                </ThemedText>
+              </View>
+              {photoError ? (
+                <ThemedText type="default" style={{ color: theme.danger }}>
+                  {photoError}
+                </ThemedText>
+              ) : null}
+              <View style={styles.photoRow}>
+                {room.photos.map((photo) => (
+                  <View key={photo.id} style={styles.photoWrap}>
+                    <Image
+                      source={{ uri: photo.uri }}
+                      style={styles.photoThumb}
+                    />
+                    {showRoomOptions ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={t('removePhoto')}
+                        hitSlop={8}
+                        onPress={() => {
+                          void removePhoto(photo.id);
+                        }}
+                        style={[
+                          styles.photoRemove,
+                          { backgroundColor: theme.dangerFill },
+                        ]}
+                      >
+                        <ThemedText
+                          type="smallBold"
+                          style={{ color: theme.onDangerFill }}
+                        >
+                          ×
+                        </ThemedText>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                ))}
+              </View>
+
+            </View>
 
             {manualUnverified ? (
               <ThemedText type="default" style={{ color: theme.warning }}>
@@ -786,78 +846,14 @@ export function ManualWalkthrough({
               </ThemedText>
             ) : null}
 
-            {lidarAvailable ? (
-              <View style={styles.section}>
-                {roomScanSaved ? (
-                  <View
-                    style={[
-                      styles.scanDoneRow,
-                      { backgroundColor: theme.backgroundSelected },
-                    ]}
-                  >
-                    <ThemedText type="default" style={styles.scanDoneLabel}>
-                      {roomVerified
-                        ? `✓ ${Math.round(room.scanArtifact!.measuredSqft!)} ${t('squareFeetShort')}`
-                        : t('scanSavedUnverified')}
-                    </ThemedText>
-                    <View style={styles.scanActionColumn}>
-                      <Pressable
-                        accessibilityRole="button"
-                        onPress={() =>
-                          onOpenLidar?.({
-                            draftId: draft.id,
-                            roomId: room.id,
-                          })
-                        }
-                        style={[
-                          styles.againChip,
-                          { borderColor: theme.accent },
-                        ]}
-                      >
-                        <ThemedText
-                          type="smallBold"
-                          style={{ color: theme.accentText }}
-                        >
-                          {t('scanAgain')}
-                        </ThemedText>
-                      </Pressable>
-                    </View>
-                  </View>
-                ) : (
-                  <>
-                    <GuideButton
-                      label={t('scanRoom')}
-                      onPress={() =>
-                        onOpenLidar?.({ draftId: draft.id, roomId: room.id })
-                      }
-                      accent={theme.accent}
-                      onAccent={theme.onAccent}
-                    />
-                    {previousRoomMeasurement > 0 ? (
-                      <ThemedText
-                        type="smallBold"
-                        style={[styles.centerHint, { color: theme.warning }]}
-                      >
-                        {t('previousUnverifiedMeasurement')}:{' '}
-                        {Math.round(previousRoomMeasurement)}{' '}
-                        {t('squareFeetShort')}
-                      </ThemedText>
-                    ) : null}
-                    <ThemedText
-                      type="small"
-                      themeColor="textSecondary"
-                      style={styles.centerHint}
-                    >
-                      {t('scanMeasuresHint')}
-                    </ThemedText>
-                  </>
-                )}
-                {shareError ? (
-                  <ThemedText type="small" style={{ color: theme.danger }}>
-                    {shareError}
-                  </ThemedText>
-                ) : null}
-              </View>
+            {roomScanSaved ? (
+              <ThemedText type="smallBold" style={{ color: roomVerified ? theme.accentText : theme.warning }}>
+                {roomVerified ? `✓ ${Math.round(room.scanArtifact!.measuredSqft!)} ${t('squareFeetShort')}` : t('scanSavedUnverified')}
+              </ThemedText>
+            ) : previousRoomMeasurement > 0 ? (
+              <ThemedText type="small" style={{ color: theme.warning }}>
+                {t('previousUnverifiedMeasurement')}: {Math.round(previousRoomMeasurement)} {t('squareFeetShort')}
+              </ThemedText>
             ) : null}
 
             <View style={styles.section}>
@@ -873,15 +869,12 @@ export function ManualWalkthrough({
                       : condition === 'watch'
                         ? t('conditionWatch')
                         : t('conditionIssue');
-                  const border =
-                    condition === 'good'
-                      ? theme.accent
-                      : condition === 'watch'
-                        ? theme.warning
-                        : theme.danger;
+                  const border = theme.accent;
                   return (
                     <Pressable
                       key={condition}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: selected }}
                       onPress={() => setCondition(condition)}
                       style={({ pressed }) => [
                         styles.readyChip,
@@ -924,6 +917,8 @@ export function ManualWalkthrough({
                     return (
                       <Pressable
                         key={part}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: on }}
                         onPress={() => togglePart(part)}
                         style={({ pressed }) => [
                           styles.partChip,
@@ -962,93 +957,6 @@ export function ManualWalkthrough({
                 ) : null}
               </View>
             ) : null}
-
-            <View style={styles.section}>
-              <View style={styles.photoHeader}>
-                <ThemedText type="smallBold">{t('photosCount')}</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary">
-                  {photoHint}
-                </ThemedText>
-              </View>
-              {photoError ? (
-                <ThemedText type="default" style={{ color: theme.danger }}>
-                  {photoError}
-                </ThemedText>
-              ) : null}
-              <View style={styles.photoRow}>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => {
-                    void addPhoto('camera');
-                  }}
-                  style={[styles.addPhotoTile, { backgroundColor: theme.text }]}
-                >
-                  <ThemedText
-                    type="smallBold"
-                    style={{ color: theme.onAccent }}
-                  >
-                    {t('addPhoto')}
-                  </ThemedText>
-                </Pressable>
-                {room.photos.map((photo) => (
-                  <View key={photo.id} style={styles.photoWrap}>
-                    <Image
-                      source={{ uri: photo.uri }}
-                      style={styles.photoThumb}
-                    />
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={t('removePhoto')}
-                      hitSlop={8}
-                      onPress={() => {
-                        void removePhoto(photo.id);
-                      }}
-                      style={[
-                        styles.photoRemove,
-                        { backgroundColor: theme.dangerFill },
-                      ]}
-                    >
-                      <ThemedText
-                        type="smallBold"
-                        style={{ color: theme.onDangerFill }}
-                      >
-                        ×
-                      </ThemedText>
-                    </Pressable>
-                  </View>
-                ))}
-              </View>
-              <Pressable
-                onPress={() => {
-                  void addPhoto('library');
-                }}
-                style={styles.linkButton}
-              >
-                <ThemedText type="small" themeColor="textSecondary">
-                  {t('addFromLibrary')}
-                </ThemedText>
-              </Pressable>
-            </View>
-
-            <GuideButton
-              label={nextLabel}
-              onPress={goNextRoomOrFinish}
-              accent={theme.accent}
-              onAccent={theme.onAccent}
-            />
-            <GuideButton
-              label={t('skipRoom')}
-              onPress={skipRoom}
-              accent={theme.accentText}
-              onAccent={theme.onAccent}
-              secondary
-              border={theme.border}
-            />
-            <Pressable onPress={addRoom} style={styles.linkButton}>
-              <ThemedText type="small" themeColor="textSecondary">
-                {t('addRoom')}
-              </ThemedText>
-            </Pressable>
           </ThemedView>
         )}
 
@@ -1057,81 +965,21 @@ export function ManualWalkthrough({
             type="backgroundElement"
             style={[styles.card, { borderColor: theme.border }]}
           >
-            <View
-              style={[
-                styles.statusBanner,
-                {
-                  backgroundColor:
-                    draft.verificationStatus === 'verified'
-                      ? theme.successFill
-                      : theme.warningFill,
-                },
-              ]}
-            >
-              <ThemedText
-                type="heading"
-                style={{
-                  color:
-                    draft.verificationStatus === 'verified'
-                      ? theme.onSuccessFill
-                      : theme.onWarningFill,
-                }}
-              >
-                {draft.verificationStatus === 'verified'
-                  ? t('jobVerified')
-                  : t('jobUnverified')}
+            <View style={styles.titleRow}>
+              <ThemedText type="heading" style={[styles.prompt, styles.headerTitle]}>
+                {t(jobSent ? 'jobSent' : draft.completedAt ? 'jobReadyToSend' : 'reviewJob')}
               </ThemedText>
+              <OverflowButton open={showMore} onPress={() => setShowMore(value => !value)} disabled={isSaving} />
             </View>
+            <ThemedText type="smallBold" style={{ color: areaVerified ? theme.accentText : theme.warning }}>
+              {t(areaVerified ? 'areaVerified' : 'areaUnverified')}
+            </ThemedText>
             <ThemedText type="heading" style={styles.doneUnit}>
               {draft.property}
             </ThemedText>
             <ThemedText type="default" themeColor="textSecondary">
               {t('unit')} {draft.unit}
             </ThemedText>
-            {measured > 0 ||
-            recorded !== null ||
-            previousUnverifiedMeasured > 0 ? (
-              <View
-                style={[
-                  styles.measureBox,
-                  { backgroundColor: theme.backgroundSelected },
-                ]}
-              >
-                <View style={styles.measureCols}>
-                  <View style={styles.measureCol}>
-                    <ThemedText type="small" themeColor="textSecondary">
-                      {t('recordedSqftLabel')}
-                    </ThemedText>
-                    <ThemedText type="heading" style={styles.measureLine}>
-                      {recorded !== null ? Math.round(recorded) : '—'}
-                    </ThemedText>
-                  </View>
-                  <View style={styles.measureCol}>
-                    <ThemedText
-                      type="small"
-                      style={{ color: theme.accentText }}
-                    >
-                      {t('measuredSqftLabel')}
-                    </ThemedText>
-                    <ThemedText type="heading" style={styles.measureLine}>
-                      {measured > 0 ? Math.round(measured) : '—'}
-                    </ThemedText>
-                  </View>
-                </View>
-                {measured === 0 ? (
-                  <ThemedText type="default" themeColor="textSecondary">
-                    {t('noVerifiedTotal')}
-                  </ThemedText>
-                ) : null}
-                {previousUnverifiedMeasured > 0 ? (
-                  <ThemedText type="smallBold" style={{ color: theme.warning }}>
-                    {t('previousUnverifiedMeasurement')}:{' '}
-                    {Math.round(previousUnverifiedMeasured)}{' '}
-                    {t('squareFeetShort')}
-                  </ThemedText>
-                ) : null}
-              </View>
-            ) : null}
             {savedMessage || draft.completedAt ? (
               <ThemedText type="default" themeColor="textSecondary">
                 {savedMessage ?? t('savedOnDevice')}
@@ -1142,12 +990,10 @@ export function ManualWalkthrough({
                 label={
                   isSaving
                     ? t('saving')
-                    : canSaveVerified
-                      ? t('saveVerified')
-                      : t('saveUnverified')
+                    : canSend ? t('reviewAndSend') : t('saveJob')
                 }
                 onPress={() => {
-                  void saveJob(canSaveVerified ? 'verified' : 'unverified');
+                  void saveJob(canSaveVerified ? 'verified' : 'unverified', canSend);
                 }}
                 disabled={isSaving}
                 accent={theme.accent}
@@ -1155,7 +1001,7 @@ export function ManualWalkthrough({
               />
             ) : (
               <>
-                {fieldSubmissionEnabled && Platform.OS !== 'web' ? (
+                {canSend && !jobSent ? (
                   <GuideButton
                     label={t('sendToManager')}
                     onPress={() =>
@@ -1168,31 +1014,74 @@ export function ManualWalkthrough({
                     onAccent={theme.onAccent}
                   />
                 ) : null}
-                <GuideButton
-                  label={t('myJobs')}
-                  onPress={() => router.replace('/')}
-                  accent={theme.accentText}
-                  onAccent={theme.onAccent}
-                  secondary
-                  border={theme.border}
-                />
+                {!canSend || jobSent ? (
+                  <GuideButton label={t('myJobs')} onPress={() => router.replace('/')}
+                    accent={theme.accent} onAccent={theme.onAccent} />
+                ) : null}
               </>
             )}
-            {draft.completedAt ||
-            (onShareScan && draft.rooms.some((item) => item.scanArtifact)) ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ expanded: showMore }}
-                onPress={() => setShowMore((value) => !value)}
-                style={styles.linkButton}
-              >
-                <ThemedText type="smallBold" themeColor="textSecondary">
-                  {t('moreOptions')} {showMore ? '−' : '+'}
-                </ThemedText>
-              </Pressable>
-            ) : null}
             {showMore ? (
               <View style={styles.section}>
+                {!draft.completedAt && canSend ? (
+                  <Pressable accessibilityRole="button" disabled={isSaving} style={styles.linkButton}
+                    onPress={() => { void saveJob(canSaveVerified ? 'verified' : 'unverified'); }}>
+                    <ThemedText type="smallBold" themeColor="accentText">{t('saveForLater')}</ThemedText>
+                  </Pressable>
+                ) : null}
+                <Pressable accessibilityRole="button" disabled={isSaving} style={styles.linkButton}
+                  onPress={() => { setShowMore(false); setShowRoomOptions(false); setScreenStep('roomGuide'); }}>
+                  <ThemedText type="smallBold" themeColor="accentText">{t('editRooms')}</ThemedText>
+                </Pressable>
+                {canSend && !jobSent ? (
+                  <GuideButton label={t('myJobs')} onPress={() => router.replace('/')} secondary
+                    accent={theme.accentText} onAccent={theme.onAccent} border={theme.border} />
+                ) : null}
+
+                {measured > 0 ||
+                recorded !== null ||
+                previousUnverifiedMeasured > 0 ? (
+                  <View
+                    style={[
+                      styles.measureBox,
+                      { backgroundColor: theme.backgroundSelected },
+                    ]}
+                  >
+                    <View style={styles.measureCols}>
+                      <View style={styles.measureCol}>
+                        <ThemedText type="small" themeColor="textSecondary">
+                          {t('recordedSqftLabel')}
+                        </ThemedText>
+                        <ThemedText type="heading" style={styles.measureLine}>
+                          {recorded !== null ? Math.round(recorded) : '—'}
+                        </ThemedText>
+                      </View>
+                      <View style={styles.measureCol}>
+                        <ThemedText
+                          type="small"
+                          style={{ color: theme.accentText }}
+                        >
+                          {t('measuredSqftLabel')}
+                        </ThemedText>
+                        <ThemedText type="heading" style={styles.measureLine}>
+                          {measured > 0 ? Math.round(measured) : '—'}
+                        </ThemedText>
+                      </View>
+                    </View>
+                    {measured === 0 ? (
+                      <ThemedText type="default" themeColor="textSecondary">
+                        {t('noVerifiedTotal')}
+                      </ThemedText>
+                    ) : null}
+                    {previousUnverifiedMeasured > 0 ? (
+                      <ThemedText type="smallBold" style={{ color: theme.warning }}>
+                        {t('previousUnverifiedMeasurement')}:{' '}
+                        {Math.round(previousUnverifiedMeasured)}{' '}
+                        {t('squareFeetShort')}
+                      </ThemedText>
+                    ) : null}
+                  </View>
+                ) : null}
+
                 {onShareScan &&
                 draft.rooms.some((item) => item.scanArtifact != null) ? (
                   <View style={styles.section}>
@@ -1240,6 +1129,8 @@ export function ManualWalkthrough({
                           }
                           applyCommittedStore(committed.store);
                           setScreenStep('checkin');
+                          setShowMore(false);
+                          setShowRecordedArea(false);
                           setSavedMessage(null);
                         })
                         .catch(() => {
@@ -1257,6 +1148,21 @@ export function ManualWalkthrough({
           </ThemedView>
         )}
       </ScrollView>
+      {screenStep === 'roomGuide' && draft && room ? (
+        <View style={[styles.footer, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+          <ThemedText type="small" themeColor="textSecondary" style={styles.centerHint}>
+            {t(advanceBlock === 'photo' ? 'photoRequired' : advanceBlock === 'scan' ? 'scanRequired' : 'roomSavedHint')}
+          </ThemedText>
+          <GuideButton
+            label={advanceBlock === 'photo' ? t('takePhoto') : advanceBlock === 'scan' ? t('scanRoom') : nextLabel}
+            onPress={() => {
+              if (advanceBlock === 'photo') { void addPhoto('camera'); }
+              else if (advanceBlock === 'scan') { onOpenLidar?.({ draftId: draft.id, roomId: room.id }); }
+              else goNextRoomOrFinish();
+            }}
+            accent={theme.accent} onAccent={theme.onAccent} />
+        </View>
+      ) : null}
     </KeyboardAvoidingView>
   );
 }
@@ -1265,25 +1171,27 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
+  footer: {
+    padding: Spacing.three,
+    gap: Spacing.two,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
   scrollContent: {
-    padding: Spacing.four,
+    padding: Spacing.three,
     gap: Spacing.three,
     paddingBottom: Spacing.six,
   },
-  topBar: {
+  titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: Spacing.two,
   },
-  backHit: {
-    minHeight: MinTouchTarget,
-    justifyContent: 'center',
-    paddingRight: Spacing.two,
-  },
+  headerTitle: { flex: 1 },
+  optionsPanel: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 12 },
   card: {
     gap: Spacing.four,
-    padding: Spacing.four,
+    padding: Spacing.three,
     borderRadius: Spacing.three,
     borderWidth: StyleSheet.hairlineWidth,
   },
@@ -1305,40 +1213,17 @@ const styles = StyleSheet.create({
   centerHint: {
     textAlign: 'center',
   },
-  scanDoneRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: Spacing.two,
-    borderRadius: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    minHeight: 52,
-  },
-  scanDoneLabel: {
-    fontWeight: '700',
-    fontSize: 18,
-    flex: 1,
-  },
-  scanActionColumn: {
-    alignItems: 'stretch',
-    gap: Spacing.one,
-  },
-  againChip: {
-    minHeight: MinTouchTarget,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.two,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   readyRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: Spacing.two,
   },
   readyChip: {
-    flex: 1,
-    minHeight: 72,
+    flexGrow: 1,
+    flexBasis: '30%',
+    minWidth: 86,
+    minHeight: 56,
+    paddingVertical: 10,
     borderRadius: Spacing.three,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1388,9 +1273,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 4,
     right: 4,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1416,13 +1301,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: Spacing.two,
   },
-  addPhotoTile: {
-    width: 82,
-    height: 82,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   photoThumb: {
     width: 82,
     height: 82,
@@ -1440,12 +1318,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.three,
-  },
-  statusBanner: {
-    borderRadius: Spacing.three,
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    alignItems: 'center',
   },
   doneUnit: {
     fontSize: 24,
