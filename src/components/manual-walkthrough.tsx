@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 
+import { OverflowButton } from '@/components/overflow-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MinTouchTarget, Spacing } from '@/constants/theme';
@@ -619,6 +620,7 @@ export function ManualWalkthrough({
       return;
     }
     setIsSaving(true);
+    setShowMore(false);
     onSavingChange?.(true);
     setHydrateError(null);
     setSavedMessage(null);
@@ -650,10 +652,6 @@ export function ManualWalkthrough({
   const jobSent = !!draft && isJobSent(draft, user?.id);
   const advanceBlock = room ? canAdvanceRoom(room, lidarRequired) : 'ok';
 
-  const showGuideBack =
-    screenStep === 'roomGuide' ||
-    (screenStep === 'done' && draft && !draft.completedAt);
-
   const selectedParts = room?.issueParts ?? [];
   const showParts = room != null && room.condition !== 'good';
   const showOtherNote = selectedParts.includes('partOther');
@@ -683,21 +681,6 @@ export function ManualWalkthrough({
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {showGuideBack ? (
-          <View style={styles.topBar}>
-            <Pressable
-              accessibilityRole="button"
-              disabled={isSaving}
-              onPress={goBackStep}
-              style={[styles.backHit, isSaving && styles.buttonDisabled]}
-            >
-              <ThemedText type="smallBold" style={{ color: theme.accentText }}>
-                ‹ {t(screenStep === 'roomGuide' && roomIndex === 0 ? 'myJobs' : 'back')}
-              </ThemedText>
-            </Pressable>
-          </View>
-        ) : null}
-
         {hydrateError ? (
           <ThemedText type="default" style={{ color: theme.danger }}>
             {hydrateError}
@@ -709,9 +692,10 @@ export function ManualWalkthrough({
             type="backgroundElement"
             style={[styles.card, { borderColor: theme.border }]}
           >
-            <ThemedText type="heading" style={styles.prompt}>
-              {t('startJob')}
-            </ThemedText>
+            <View style={styles.titleRow}>
+              <ThemedText type="heading" style={[styles.prompt, styles.headerTitle]}>{t('startJob')}</ThemedText>
+              <OverflowButton open={showRecordedArea} onPress={() => setShowRecordedArea(value => !value)} />
+            </View>
             <ThemedText type="default" themeColor="textSecondary">
               {t('startJobHint')}
             </ThemedText>
@@ -741,20 +725,9 @@ export function ManualWalkthrough({
                 onChangeText={setUnitNumber}
               />
             </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{
-                expanded: showRecordedArea,
-              }}
-              onPress={() => setShowRecordedArea((value) => !value)}
-              style={styles.backHit}
-            >
-              <ThemedText type="smallBold" themeColor="accentText">
-                {t('recordedSqftOptional')} {showRecordedArea ? '−' : '+'}
-              </ThemedText>
-            </Pressable>
             {showRecordedArea ? (
               <View style={styles.fieldGroup}>
+                <ThemedText type="smallBold">{t('recordedSqftOptional')}</ThemedText>
                 <TextInput
                   style={[styles.input, inputStyle]}
                   placeholder={t('optional')}
@@ -794,10 +767,33 @@ export function ManualWalkthrough({
                 {draft.rooms.length}
               </ThemedText>
             </View>
-            <ThemedText type="heading" style={styles.roomTitle}>
-              {room.name || t('rooms')}
-            </ThemedText>
+            <View style={styles.titleRow}>
+              <ThemedText type="heading" style={[styles.roomTitle, styles.headerTitle]}>{room.name || t('rooms')}</ThemedText>
+              <OverflowButton open={showRoomOptions} onPress={() => setShowRoomOptions(value => !value)} label={t('roomOptions')} />
+            </View>
 
+            {showRoomOptions ? (
+              <View style={[styles.section, styles.optionsPanel, { borderColor: theme.border }]}>
+                <GuideButton label={t('takePhoto')} onPress={() => { setShowRoomOptions(false); void addPhoto('camera'); }} secondary
+                  accent={theme.accentText} onAccent={theme.onAccent} border={theme.border} />
+                <GuideButton label={t('addFromLibrary')} onPress={() => { setShowRoomOptions(false); void addPhoto('library'); }} secondary
+                  accent={theme.accentText} onAccent={theme.onAccent} border={theme.border} />
+                {lidarAvailable ? (
+                  <GuideButton label={roomScanSaved ? t('scanAgain') : t('scanRoom')}
+                    onPress={() => { setShowRoomOptions(false); onOpenLidar?.({ draftId: draft.id, roomId: room.id }); }} secondary
+                    accent={theme.accentText} onAccent={theme.onAccent} border={theme.border} />
+                ) : null}
+                <GuideButton label={roomIndex > 0 ? t('previousRoom') : t('myJobs')} onPress={goBackStep} secondary
+                  accent={theme.accentText} onAccent={theme.onAccent} border={theme.border} />
+                <ThemedText type="smallBold">{t('roomName')}</ThemedText>
+                <TextInput accessibilityLabel={t('roomName')} value={room.name}
+                  onChangeText={name => patchRoom({ name })} style={[styles.input, inputStyle]} />
+                <GuideButton label={t('addRoom')} onPress={addRoom} secondary
+                  accent={theme.accentText} onAccent={theme.onAccent} border={theme.border} />
+                <GuideButton label={t('skipRoom')} onPress={skipRoom} secondary
+                  accent={theme.accentText} onAccent={theme.onAccent} border={theme.border} />
+              </View>
+            ) : null}
             <View style={styles.section}>
               <View style={styles.photoHeader}>
                 <ThemedText type="smallBold">{t('photosCount')}</ThemedText>
@@ -810,8 +806,6 @@ export function ManualWalkthrough({
                   {photoError}
                 </ThemedText>
               ) : null}
-              <GuideButton label={t('takePhoto')} onPress={() => { void addPhoto('camera'); }}
-                accent={theme.accentText} onAccent={theme.onAccent} secondary border={theme.accent} />
               <View style={styles.photoRow}>
                 {room.photos.map((photo) => (
                   <View key={photo.id} style={styles.photoWrap}>
@@ -819,39 +813,31 @@ export function ManualWalkthrough({
                       source={{ uri: photo.uri }}
                       style={styles.photoThumb}
                     />
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={t('removePhoto')}
-                      hitSlop={8}
-                      onPress={() => {
-                        void removePhoto(photo.id);
-                      }}
-                      style={[
-                        styles.photoRemove,
-                        { backgroundColor: theme.dangerFill },
-                      ]}
-                    >
-                      <ThemedText
-                        type="smallBold"
-                        style={{ color: theme.onDangerFill }}
+                    {showRoomOptions ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={t('removePhoto')}
+                        hitSlop={8}
+                        onPress={() => {
+                          void removePhoto(photo.id);
+                        }}
+                        style={[
+                          styles.photoRemove,
+                          { backgroundColor: theme.dangerFill },
+                        ]}
                       >
-                        ×
-                      </ThemedText>
-                    </Pressable>
+                        <ThemedText
+                          type="smallBold"
+                          style={{ color: theme.onDangerFill }}
+                        >
+                          ×
+                        </ThemedText>
+                      </Pressable>
+                    ) : null}
                   </View>
                 ))}
               </View>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => {
-                  void addPhoto('library');
-                }}
-                style={styles.linkButton}
-              >
-                <ThemedText type="small" themeColor="textSecondary">
-                  {t('addFromLibrary')}
-                </ThemedText>
-              </Pressable>
+
             </View>
 
             {manualUnverified ? (
@@ -860,80 +846,14 @@ export function ManualWalkthrough({
               </ThemedText>
             ) : null}
 
-            {lidarAvailable ? (
-              <View style={styles.section}>
-                {roomScanSaved ? (
-                  <View
-                    style={[
-                      styles.scanDoneRow,
-                      { backgroundColor: theme.backgroundSelected },
-                    ]}
-                  >
-                    <ThemedText type="default" style={styles.scanDoneLabel}>
-                      {roomVerified
-                        ? `✓ ${Math.round(room.scanArtifact!.measuredSqft!)} ${t('squareFeetShort')}`
-                        : t('scanSavedUnverified')}
-                    </ThemedText>
-                    <View style={styles.scanActionColumn}>
-                      <Pressable
-                        accessibilityRole="button"
-                        onPress={() =>
-                          onOpenLidar?.({
-                            draftId: draft.id,
-                            roomId: room.id,
-                          })
-                        }
-                        style={[
-                          styles.againChip,
-                          { borderColor: theme.accent },
-                        ]}
-                      >
-                        <ThemedText
-                          type="smallBold"
-                          style={{ color: theme.accentText }}
-                        >
-                          {t('scanAgain')}
-                        </ThemedText>
-                      </Pressable>
-                    </View>
-                  </View>
-                ) : (
-                  <>
-                    <GuideButton
-                      label={t('scanRoom')}
-                      secondary
-                      border={theme.border}
-                      onPress={() =>
-                        onOpenLidar?.({ draftId: draft.id, roomId: room.id })
-                      }
-                      accent={theme.accent}
-                      onAccent={theme.onAccent}
-                    />
-                    {previousRoomMeasurement > 0 ? (
-                      <ThemedText
-                        type="smallBold"
-                        style={[styles.centerHint, { color: theme.warning }]}
-                      >
-                        {t('previousUnverifiedMeasurement')}:{' '}
-                        {Math.round(previousRoomMeasurement)}{' '}
-                        {t('squareFeetShort')}
-                      </ThemedText>
-                    ) : null}
-                    <ThemedText
-                      type="small"
-                      themeColor="textSecondary"
-                      style={styles.centerHint}
-                    >
-                      {t('scanMeasuresHint')}
-                    </ThemedText>
-                  </>
-                )}
-                {shareError ? (
-                  <ThemedText type="small" style={{ color: theme.danger }}>
-                    {shareError}
-                  </ThemedText>
-                ) : null}
-              </View>
+            {roomScanSaved ? (
+              <ThemedText type="smallBold" style={{ color: roomVerified ? theme.accentText : theme.warning }}>
+                {roomVerified ? `✓ ${Math.round(room.scanArtifact!.measuredSqft!)} ${t('squareFeetShort')}` : t('scanSavedUnverified')}
+              </ThemedText>
+            ) : previousRoomMeasurement > 0 ? (
+              <ThemedText type="small" style={{ color: theme.warning }}>
+                {t('previousUnverifiedMeasurement')}: {Math.round(previousRoomMeasurement)} {t('squareFeetShort')}
+              </ThemedText>
             ) : null}
 
             <View style={styles.section}>
@@ -1037,24 +957,6 @@ export function ManualWalkthrough({
                 ) : null}
               </View>
             ) : null}
-
-            <Pressable accessibilityRole="button" accessibilityState={{ expanded: showRoomOptions }}
-              onPress={() => setShowRoomOptions(value => !value)} style={styles.linkButton}>
-              <ThemedText type="smallBold" themeColor="textSecondary">
-                {t('roomOptions')} {showRoomOptions ? '−' : '+'}
-              </ThemedText>
-            </Pressable>
-            {showRoomOptions ? (
-              <View style={styles.section}>
-                <ThemedText type="smallBold">{t('roomName')}</ThemedText>
-                <TextInput accessibilityLabel={t('roomName')} value={room.name}
-                  onChangeText={name => patchRoom({ name })} style={[styles.input, inputStyle]} />
-                <GuideButton label={t('addRoom')} onPress={addRoom} secondary
-                  accent={theme.accentText} onAccent={theme.onAccent} border={theme.border} />
-                <GuideButton label={t('skipRoom')} onPress={skipRoom} secondary
-                  accent={theme.accentText} onAccent={theme.onAccent} border={theme.border} />
-              </View>
-            ) : null}
           </ThemedView>
         )}
 
@@ -1063,9 +965,12 @@ export function ManualWalkthrough({
             type="backgroundElement"
             style={[styles.card, { borderColor: theme.border }]}
           >
-            <ThemedText type="heading" style={styles.prompt}>
-              {t(jobSent ? 'jobSent' : draft.completedAt ? 'jobReadyToSend' : 'reviewJob')}
-            </ThemedText>
+            <View style={styles.titleRow}>
+              <ThemedText type="heading" style={[styles.prompt, styles.headerTitle]}>
+                {t(jobSent ? 'jobSent' : draft.completedAt ? 'jobReadyToSend' : 'reviewJob')}
+              </ThemedText>
+              <OverflowButton open={showMore} onPress={() => setShowMore(value => !value)} disabled={isSaving} />
+            </View>
             <ThemedText type="smallBold" style={{ color: areaVerified ? theme.accentText : theme.warning }}>
               {t(areaVerified ? 'areaVerified' : 'areaUnverified')}
             </ThemedText>
@@ -1109,40 +1014,29 @@ export function ManualWalkthrough({
                     onAccent={theme.onAccent}
                   />
                 ) : null}
-                <GuideButton
-                  label={t('myJobs')}
-                  onPress={() => router.replace('/')}
-                  accent={theme.accentText}
-                  onAccent={theme.onAccent}
-                  secondary
-                  border={theme.border}
-                />
+                {!canSend || jobSent ? (
+                  <GuideButton label={t('myJobs')} onPress={() => router.replace('/')}
+                    accent={theme.accent} onAccent={theme.onAccent} />
+                ) : null}
               </>
             )}
-            {!draft.completedAt && canSend ? (
-              <Pressable accessibilityRole="button" disabled={isSaving} style={styles.linkButton}
-                onPress={() => { void saveJob(canSaveVerified ? 'verified' : 'unverified'); }}>
-                <ThemedText type="smallBold" themeColor="accentText">{t('saveForLater')}</ThemedText>
-              </Pressable>
-            ) : null}
-            <Pressable accessibilityRole="button" disabled={isSaving} style={styles.linkButton}
-              onPress={() => setScreenStep('roomGuide')}>
-              <ThemedText type="smallBold" themeColor="accentText">{t('editRooms')}</ThemedText>
-            </Pressable>
-            {draft ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ expanded: showMore }}
-                onPress={() => setShowMore((value) => !value)}
-                style={styles.linkButton}
-              >
-                <ThemedText type="smallBold" themeColor="textSecondary">
-                  {t('jobDetails')} {showMore ? '−' : '+'}
-                </ThemedText>
-              </Pressable>
-            ) : null}
             {showMore ? (
               <View style={styles.section}>
+                {!draft.completedAt && canSend ? (
+                  <Pressable accessibilityRole="button" disabled={isSaving} style={styles.linkButton}
+                    onPress={() => { void saveJob(canSaveVerified ? 'verified' : 'unverified'); }}>
+                    <ThemedText type="smallBold" themeColor="accentText">{t('saveForLater')}</ThemedText>
+                  </Pressable>
+                ) : null}
+                <Pressable accessibilityRole="button" disabled={isSaving} style={styles.linkButton}
+                  onPress={() => { setShowMore(false); setShowRoomOptions(false); setScreenStep('roomGuide'); }}>
+                  <ThemedText type="smallBold" themeColor="accentText">{t('editRooms')}</ThemedText>
+                </Pressable>
+                {canSend && !jobSent ? (
+                  <GuideButton label={t('myJobs')} onPress={() => router.replace('/')} secondary
+                    accent={theme.accentText} onAccent={theme.onAccent} border={theme.border} />
+                ) : null}
+
                 {measured > 0 ||
                 recorded !== null ||
                 previousUnverifiedMeasured > 0 ? (
@@ -1235,6 +1129,8 @@ export function ManualWalkthrough({
                           }
                           applyCommittedStore(committed.store);
                           setScreenStep('checkin');
+                          setShowMore(false);
+                          setShowRecordedArea(false);
                           setSavedMessage(null);
                         })
                         .catch(() => {
@@ -1285,17 +1181,14 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     paddingBottom: Spacing.six,
   },
-  topBar: {
+  titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: Spacing.two,
   },
-  backHit: {
-    minHeight: MinTouchTarget,
-    justifyContent: 'center',
-    paddingRight: Spacing.two,
-  },
+  headerTitle: { flex: 1 },
+  optionsPanel: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 12 },
   card: {
     gap: Spacing.four,
     padding: Spacing.three,
@@ -1319,33 +1212,6 @@ const styles = StyleSheet.create({
   },
   centerHint: {
     textAlign: 'center',
-  },
-  scanDoneRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: Spacing.two,
-    borderRadius: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    minHeight: 52,
-  },
-  scanDoneLabel: {
-    fontWeight: '700',
-    fontSize: 18,
-    flex: 1,
-  },
-  scanActionColumn: {
-    alignItems: 'stretch',
-    gap: Spacing.one,
-  },
-  againChip: {
-    minHeight: MinTouchTarget,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.two,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   readyRow: {
     flexDirection: 'row',

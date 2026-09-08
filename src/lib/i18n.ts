@@ -1,6 +1,8 @@
 export type AppLocale = 'en' | 'es';
 
 const en = {
+  previousRoom: 'Previous room',
+  changeDestination: 'Change destination',
   viewJob: 'View job',
   changeUnit: 'Change unit',
   jobSent: 'Sent',
@@ -202,6 +204,8 @@ const en = {
 } as const;
 
 const es: { [K in keyof typeof en]: string } = {
+  previousRoom: 'Habitación anterior',
+  changeDestination: 'Cambiar destino',
   viewJob: 'Ver trabajo',
   changeUnit: 'Cambiar unidad',
   jobSent: 'Enviado',

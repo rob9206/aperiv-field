@@ -3,6 +3,7 @@ import { isJobSent } from '@/lib/crew-workflow';
 import type { TranslationKey } from '@/lib/i18n';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
+import { OverflowButton } from '@/components/overflow-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MinTouchTarget, Spacing } from '@/constants/theme';
@@ -139,15 +140,11 @@ export function JobList({
                   </ThemedText>
                 ) : null}
               </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`${t('moreOptions')}: ${job.unit}`}
-                accessibilityState={{ expanded: optionsId === job.id }}
-                onPress={() => setOptionsId(optionsId === job.id ? null : job.id)}
-                style={styles.deleteHit}
-              >
-                <ThemedText type="small" themeColor="textSecondary">{t('moreOptions')} {optionsId === job.id ? '−' : '+'}</ThemedText>
-              </Pressable>
+              <View style={styles.rowMenu}>
+                <OverflowButton open={optionsId === job.id}
+                  label={`${t('moreOptions')}: ${job.unit}`}
+                  onPress={() => setOptionsId(optionsId === job.id ? null : job.id)} />
+              </View>
               {optionsId === job.id ? <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`${t('deleteJob')}: ${job.property}, ${job.unit}`}
@@ -221,7 +218,9 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
     gap: Spacing.two,
   },
+  rowMenu: { position: 'absolute', top: 8, right: 8 },
   rowCopy: {
+    paddingRight: 40,
     flex: 1,
     gap: Spacing.one,
   },

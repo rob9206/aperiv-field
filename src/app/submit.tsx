@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { OverflowButton } from '@/components/overflow-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useTheme } from '@/hooks/use-theme';
@@ -109,6 +110,7 @@ function SubmissionForm({ draftId }: { draftId: string }) {
   const [propertyId, setPropertyId] = useState('');
   const [unitId, setUnitId] = useState('');
   const [choosingProperty, setChoosingProperty] = useState(true);
+  const [showOptions, setShowOptions] = useState(false);
   const [failed, setFailed] = useState(false);
   const [sendError, setSendError] = useState<FieldSubmissionError | null>(null);
   const [busy, setBusy] = useState(false);
@@ -160,7 +162,7 @@ function SubmissionForm({ draftId }: { draftId: string }) {
           : null;
         const destination = sentUnit
           ? { propertyId: sentUnit.property_id, unitId: sentUnit.id }
-          : matchJobDestination(saved, next.properties, next.units);
+          : alreadySent ? null : matchJobDestination(saved, next.properties, next.units);
         if (destination) {
           setPropertyId(destination.propertyId);
           setUnitId(destination.unitId);
@@ -181,6 +183,7 @@ function SubmissionForm({ draftId }: { draftId: string }) {
     if (!draft || !unitId || lock.current) return;
     lock.current = true;
     setBusy(true);
+    setShowOptions(false);
     setFailed(false);
     setSendError(null);
     try {
@@ -220,6 +223,20 @@ function SubmissionForm({ draftId }: { draftId: string }) {
     <ThemedView style={{ flex: 1 }}>
       <SafeAreaView style={{ flex: 1 }} edges={['left', 'right', 'bottom']}>
         <ScrollView ref={scroll} contentContainerStyle={styles.content}>
+          <View style={styles.titleRow}>
+            <ThemedText accessibilityRole="header" style={[styles.title, { flex: 1 }]}>
+              {t(sent ? 'sentTitle' : 'reviewDestination')}
+            </ThemedText>
+            <OverflowButton open={showOptions} onPress={() => setShowOptions(value => !value)} disabled={busy} />
+          </View>
+          {showOptions && draft ? (
+            <View style={styles.section}>
+              <SubmitButton label={t('viewJob')} disabled={busy}
+                onPress={() => router.replace({ pathname: '/walkthrough', params: { mode: 'resume', id: draftId } })} />
+              {!sent ? <SubmitButton label={t('changeDestination')} disabled={busy}
+                onPress={() => { setChoosingProperty(true); setUnitId(''); setShowOptions(false); }} /> : null}
+            </View>
+          ) : null}
           {sent ? (
             <View
               style={[
@@ -245,11 +262,8 @@ function SubmissionForm({ draftId }: { draftId: string }) {
                   ✓
                 </ThemedText>
               </View>
-              <ThemedText accessibilityRole="header" style={styles.title}>
-                {t('sentTitle')}
-              </ThemedText>
               <ThemedText type="heading" style={styles.centered}>
-                {property?.name} · {t('unit')} {unit?.unit_number}
+                {property?.name ?? draft?.property} · {t('unit')} {unit?.unit_number ?? draft?.unit}
               </ThemedText>
               <ThemedText themeColor="textSecondary" style={styles.centered}>
                 {t('sentToManager')}
@@ -261,9 +275,6 @@ function SubmissionForm({ draftId }: { draftId: string }) {
           ) : (
             <>
               <View style={styles.section}>
-                <ThemedText accessibilityRole="header" style={styles.title}>
-                  {t('reviewDestination')}
-                </ThemedText>
                 <ThemedText themeColor="textSecondary">
                   {t('sendKeepsCopy')}
                 </ThemedText>
@@ -295,7 +306,7 @@ function SubmissionForm({ draftId }: { draftId: string }) {
                   {sendError?.roomName ? ` (${sendError.roomName})` : ''}
                 </ThemedText>
               )}
-              {draft && (
+              {failed && draft && !showOptions && (
                 <SubmitButton
                   label={t('viewJob')}
                   disabled={busy}
@@ -322,6 +333,11 @@ function SubmissionForm({ draftId }: { draftId: string }) {
                     <ThemedText>{t('loading')}</ThemedText>
                   </View>
                 )
+              ) : property && unit && !choosingProperty ? (
+                <View style={[styles.card, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+                  <ThemedText type="small" themeColor="textSecondary">{property.name}</ThemedText>
+                  <ThemedText type="heading">{unit.unit_number}</ThemedText>
+                </View>
               ) : (
                 <>
                   <View style={styles.section}>
@@ -339,14 +355,7 @@ function SubmissionForm({ draftId }: { draftId: string }) {
                         ]}
                       >
                         <ThemedText type="heading">{property.name}</ThemedText>
-                        <SubmitButton
-                          label={t('changeProperty')}
-                          onPress={() => {
-                            setChoosingProperty(true);
-                            setUnitId('');
-                          }}
-                          disabled={busy}
-                        />
+
                       </View>
                     ) : (
                       roster.properties.map((property) => (
@@ -371,7 +380,6 @@ function SubmissionForm({ draftId }: { draftId: string }) {
                       {unit ? (
                         <View style={[styles.card, { borderColor: theme.accent }]}>
                           <ThemedText type="heading">{unit.unit_number}</ThemedText>
-                          <SubmitButton label={t('changeUnit')} onPress={() => setUnitId('')} disabled={busy} />
                         </View>
                       ) : <View style={styles.units}>
                         {availableUnits.map((unit) => (
@@ -403,14 +411,11 @@ function SubmissionForm({ draftId }: { draftId: string }) {
           ]}
         >
           {sent ? (
-            <View style={styles.section}>
-            <SubmitButton label={t('viewJob')} onPress={() => router.replace({ pathname: '/walkthrough', params: { mode: 'resume', id: draftId } })} />
             <SubmitButton
               label={t('myJobs')}
               onPress={() => router.replace('/')}
               primary
             />
-            </View>
           ) : (
             <>
               <ThemedText
@@ -447,7 +452,7 @@ function SubmissionForm({ draftId }: { draftId: string }) {
 }
 const styles = StyleSheet.create({
   content: { padding: 20, gap: 24, flexGrow: 1 },
-  languageRow: { alignItems: 'flex-end' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   title: { fontSize: 28, lineHeight: 34, fontWeight: '700' },
   section: { gap: 12 },
   card: { padding: 16, gap: 8, borderWidth: 1, borderRadius: 16 },
