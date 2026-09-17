@@ -23,7 +23,8 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v57.0.0/ before 
 - Lockfile gotcha: local npm 11 (Windows) omits `@emnapi/core`/`@emnapi/runtime` from package-lock.json, but the EAS macOS worker's npm 10 requires them — `npm ci` fails the Install dependencies phase. They are pinned as devDependencies as the fix; do not remove them, and re-check after any lockfile regeneration.
 - Related walkthrough result UI/schema lives in GitHub `rob9206/aperiv`; Field is the mobile companion meant to write walkthrough results the web already reads—there was no prior custom Aperiv LiDAR scanner on this Windows machine (Apple RoomPlan sample + Expo/web placeholders).
 - Field's Supabase client is auth-only today; manual walkthrough drafts stay in AsyncStorage and RoomPlan exports stay local/share-sheet—inserts/uploads to `walkthroughs` (and photo storage) are not shipped yet.
-- Manual walkthrough unit entry is free-text (property/unit/recorded sqft) for now (no live Supabase roster); QR/GPS door check-in is Phase 2; talk-while-scanning voice notes are Phase 3 (mic/App Privacy).
+- Manual walkthrough unit entry is free-text (property/unit/recorded sqft) for now (no live Supabase roster); QR/GPS door check-in is Phase 2.
+- Voice notes use on-device iOS speech-to-text (`expo-speech-recognition`, `requiresOnDeviceRecognition: true`). Hold-to-talk is on the room screen and the Finish tile map, not during the RoomPlan overlay. The mic is hidden on web, old binaries, and when the locale language pack is missing. Do not fall back to network/cloud STT. Audio is not saved — only text is appended to room `notes`. This needs a new iOS binary; fingerprint policy will not OTA it onto current TestFlight installs.
 - Walkthrough photos are copied to `Paths.document/walkthrough-photos/<draftId>/` via the new sync expo-file-system API; drafts live in one AsyncStorage key `aperiv.field.walkthrough.drafts.v2` (multi-draft store with `activeDraftId`, auto-migrates the old v1 single-draft key).
 - Build 12 shipped the manual-capture defect fixes (free-text unit, real camera/library photos, multi-draft) in the old wizard shell. The guided job-list UX + polish (through commit `26ded93`, incl. the RoomPlan-resume fix) went live 2026-08-02 ~18:26 EDT as an EAS Update on the `production` channel — builds 12 and 13 (iOS runtime `d0791770…`) pick it up after two app launches.
 - Locale preference is stored at `aperiv.field.locale.v1` (JSON `"en"` / `"es"`); default English.
@@ -45,8 +46,11 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v57.0.0/ before 
   (Rob + Kevin Huebner + Jordan Case). Internal testers skip Beta App Review; external
   testers need each new build reviewed.
 - App Privacy will be declared as: email address + user ID only, for app functionality,
-  not used for tracking. Any new SDK that collects anything else breaks this. Do not add
-  analytics, crash reporting, or tracking without flagging it explicitly.
+  not used for tracking — **until the voice-notes binary ships**. That binary must add
+  **Microphone** for app functionality, not tracking, in App Store Connect (outside this
+  repo). Speech stays on-device; do not persist audio. Any new SDK that collects anything
+  else still breaks this. Do not add analytics, crash reporting, or tracking without
+  flagging it explicitly.
 
 ## Repo history — reconciled 2026-08-09
 

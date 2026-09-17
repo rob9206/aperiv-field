@@ -14,7 +14,9 @@
       "icon": "./assets/expo.icon",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSCameraUsageDescription": "Aperiv Field uses the camera to capture room photos and to scan room geometry with LiDAR during walkthroughs."
+        "NSCameraUsageDescription": "Aperiv Field uses the camera to capture room photos and to scan room geometry with LiDAR during walkthroughs.",
+        "NSMicrophoneUsageDescription": "Aperiv Field uses the microphone so you can speak notes about a room instead of typing.",
+        "NSSpeechRecognitionUsageDescription": "Aperiv Field turns your spoken notes into text on this device. Speech is not used for tracking."
       }
     },
     "android": {
@@ -47,6 +49,13 @@
           "backgroundColor": "#0B1120",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Aperiv Field uses the microphone so you can speak notes about a room instead of typing.",
+          "speechRecognitionPermission": "Aperiv Field turns your spoken notes into text on this device. Speech is not used for tracking."
         }
       ]
     ],

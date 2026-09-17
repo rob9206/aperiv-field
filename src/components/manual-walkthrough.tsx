@@ -13,7 +13,9 @@ import {
   View,
 } from 'react-native';
 
+import { RoomNotesField } from '@/components/hold-to-talk';
 import { LanguageToggle } from '@/components/language-toggle';
+import { RoomConditionMap } from '@/components/room-condition-map';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MinTouchTarget, Spacing } from '@/constants/theme';
@@ -679,7 +681,6 @@ export function ManualWalkthrough({
 
   const selectedParts = room?.issueParts ?? [];
   const showParts = room != null && room.condition !== 'good';
-  const showOtherNote = selectedParts.includes('partOther');
   const firstSelectedPart = selectedParts[0] as IssuePartKey | undefined;
   const photoHint =
     showParts && firstSelectedPart
@@ -987,19 +988,13 @@ export function ManualWalkthrough({
                     );
                   })}
                 </View>
-                {showOtherNote ? (
-                  <TextInput
-                    style={[styles.input, styles.notesInput, inputStyle]}
-                    placeholder={t('damageNotes')}
-                    placeholderTextColor={theme.textSecondary}
-                    value={room.notes}
-                    multiline
-                    textAlignVertical="top"
-                    onChangeText={(notes) => patchRoom({ notes })}
-                  />
-                ) : null}
               </View>
             ) : null}
+
+            <RoomNotesField
+              value={room.notes}
+              onChange={(notes) => patchRoom({ notes })}
+            />
 
             <View style={styles.section}>
               <View style={styles.photoHeader}>
@@ -1157,6 +1152,14 @@ export function ManualWalkthrough({
                 </ThemedText>
               ) : null}
             </View>
+            <RoomConditionMap
+              rooms={draft.rooms}
+              onChangeNotes={(roomId, notes) => {
+                void updateRoomById(draft.id, roomId, (latest) =>
+                  patchRoomDetails(latest, { notes })
+                );
+              }}
+            />
             {onShareScan &&
             draft.rooms.some((item) => item.scanArtifact != null) ? (
               <View style={styles.section}>

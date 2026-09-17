@@ -53,6 +53,18 @@ describe('t', () => {
     assert.equal(t('es', 'shareScanFailed').includes('compartir'), true);
   });
 
+  it('returns hold-to-talk and room map copy', () => {
+    assert.equal(t('en', 'holdToTalk'), 'Hold to talk');
+    assert.equal(t('es', 'holdToTalk'), 'Mantén para hablar');
+    assert.equal(t('en', 'listening'), 'Listening…');
+    assert.equal(t('es', 'listening'), 'Escuchando…');
+    assert.equal(t('en', 'whatEachRoomNeeds'), 'What each room needs');
+    assert.equal(
+      t('es', 'whatEachRoomNeeds'),
+      'Lo que necesita cada habitación'
+    );
+  });
+
   it('never exposes jargon in crew strings', () => {
     const keys = [
       'myJobs',
@@ -60,6 +72,12 @@ describe('t', () => {
       'saveJob',
       'savedOnDevice',
       'jobInProgress',
+      'holdToTalk',
+      'listening',
+      'voiceHearFailed',
+      'voiceMicDenied',
+      'whatEachRoomNeeds',
+      'closeRoom',
     ] as const;
     for (const key of keys) {
       for (const locale of ['en', 'es'] as const) {
@@ -67,6 +85,8 @@ describe('t', () => {
         assert.equal(value.includes('supabase'), false);
         assert.equal(value.includes('draft'), false);
         assert.equal(value.includes('walkthrough'), false);
+        assert.equal(value.includes('transcript'), false);
+        assert.equal(value.includes('speech recognition'), false);
       }
     }
   });
